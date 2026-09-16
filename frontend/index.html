@@ -1,0 +1,2174 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="taller">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ferretería · Taller</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800;900&family=Archivo+Black&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+
+/* ============================================================
+   IDENTIDAD "TALLER INDUSTRIAL"
+   Papel milimétrico · Sombras duras · Tipografía técnica
+   ============================================================ */
+:root {
+  --ink:        #1A1612;   /* tinta principal (bordes/texto) */
+  --ink-soft:   #44403C;
+  --cream:      #F0EBE0;   /* fondo base */
+  --paper:      #FBF8F0;   /* paneles */
+  --paper-alt:  #E8E1D2;   /* fondo alterno */
+  --steel:      #78716C;
+  --steel-lt:   #A8A29E;
+  --line-soft:  #D4CCBD;
+  --accent:     #EA580C;
+  --accent-hov: #C2410C;
+  --accent-br:  #F97316;
+  --hazard:     #FACC15;
+  --success:    #15803D;
+  --danger:     #B91C1C;
+  --warning:    #B45309;
+  --info:       #0369A1;
+
+  --shadow-1: 3px 3px 0 var(--ink);
+  --shadow-2: 5px 5px 0 var(--ink);
+  --shadow-3: 7px 7px 0 var(--ink);
+  --shadow-inset: inset 0 2px 0 rgba(0,0,0,.08);
+
+  --radius:   6px;
+  --radius-sm: 4px;
+
+  --grid: rgba(26,22,18,.055);
+  --grid-size: 22px;
+}
+
+:root[data-theme="noche"] {
+  --ink:        #F0EBE0;   /* tinta clara (bordes/texto) */
+  --ink-soft:   #D6D3D1;
+  --cream:      #100E0C;
+  --paper:      #1A1612;
+  --paper-alt:  #241F19;
+  --steel:      #A8A29E;
+  --steel-lt:   #57534E;
+  --line-soft:  #332B22;
+  --accent:     #F97316;
+  --accent-hov: #FB923C;
+  --accent-br:  #FB923C;
+  --hazard:     #FACC15;
+
+  --grid: rgba(240,235,224,.045);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  background-color: var(--cream);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+  background-position: -1px -1px;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color .25s, color .25s;
+  min-height: 100vh;
+}
+button { font-family: inherit; cursor: pointer; }
+.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.archivo { font-family: 'Archivo Black', 'Inter', sans-serif; font-weight: 900; letter-spacing: -.02em; }
+
+/* ============================================================
+   LOGIN
+   ============================================================ */
+#login-screen {
+  position: fixed; inset: 0;
+  background: var(--ink);
+  background-image:
+    linear-gradient(rgba(234,88,12,.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(234,88,12,.09) 1px, transparent 1px);
+  background-size: 40px 40px;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 20px;
+}
+#login-screen::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(circle at 50% 40%, rgba(234,88,12,.13) 0%, transparent 55%);
+  pointer-events: none;
+}
+#login-screen.hidden { display: none; }
+
+.login-box {
+  background: var(--paper);
+  border: 2.5px solid var(--ink);
+  box-shadow: 8px 8px 0 var(--ink), 0 0 0 6px rgba(250,204,21,.15);
+  padding: 40px 38px 34px;
+  width: 100%; max-width: 400px;
+  position: relative;
+  z-index: 1;
+  animation: loginEntry .45s cubic-bezier(.2, 1.4, .4, 1);
+}
+@keyframes loginEntry {
+  0%   { transform: translateY(20px) rotate(-1deg); opacity: 0; }
+  60%  { transform: translateY(-4px) rotate(.4deg); opacity: 1; }
+  100% { transform: translateY(0) rotate(0); }
+}
+.login-box::before,
+.login-box::after {
+  content: '';
+  position: absolute;
+  width: 18px; height: 18px;
+  border: 2.5px solid var(--accent);
+  pointer-events: none;
+}
+.login-box::before { top: -2.5px; left: -2.5px;  border-right: none; border-bottom: none; }
+.login-box::after  { bottom: -2.5px; right: -2.5px; border-left: none; border-top: none; }
+
+.login-logo {
+  width: 72px; height: 72px;
+  background: var(--accent);
+  border: 2.5px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 34px;
+  margin: 0 auto 22px;
+  transform: rotate(-3deg);
+  transition: transform .3s cubic-bezier(.3,1.4,.5,1);
+  position: relative;
+}
+.login-logo:hover { transform: rotate(3deg) scale(1.05); }
+.login-logo::after {
+  content: '⚙';
+  position: absolute;
+  bottom: -10px; right: -10px;
+  font-size: 18px;
+  background: var(--hazard);
+  border: 2px solid var(--ink);
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  animation: spin 6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.login-box h1 {
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 26px; text-align: center; margin-bottom: 6px;
+  letter-spacing: -.03em;
+  text-transform: uppercase;
+}
+.login-box h1 span { color: var(--accent); }
+.login-box p.sub {
+  text-align: center; color: var(--steel); font-size: 11px;
+  margin-bottom: 28px;
+  text-transform: uppercase; letter-spacing: 2.5px; font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+.login-box label {
+  display: block; font-size: 10.5px; color: var(--ink);
+  margin: 16px 0 6px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 1.5px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.login-box input {
+  width: 100%; padding: 12px 14px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: 'JetBrains Mono', monospace;
+  transition: all .15s;
+  box-shadow: inset 2px 2px 0 rgba(0,0,0,.05);
+}
+.login-box input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 2px 2px 0 rgba(0,0,0,.05), 0 0 0 3px var(--hazard);
+}
+.login-box button {
+  width: 100%; margin-top: 24px; padding: 14px;
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 14px; letter-spacing: 1px;
+  background: var(--accent); color: var(--paper);
+  border: 2.5px solid var(--ink);
+  border-radius: var(--radius-sm);
+  box-shadow: 4px 4px 0 var(--ink);
+  transition: all .08s ease;
+  text-transform: uppercase;
+}
+.login-box button:hover { background: var(--accent-hov); transform: translate(-1px,-1px); box-shadow: 5px 5px 0 var(--ink); }
+.login-box button:active { transform: translate(4px,4px); box-shadow: 0 0 0 var(--ink); }
+.login-error {
+  color: var(--danger); font-size: 12px;
+  margin-top: 14px; text-align: center; min-height: 18px;
+  font-family: 'JetBrains Mono', monospace; font-weight: 700;
+}
+.login-hint {
+  text-align: center; font-size: 10.5px; color: var(--steel);
+  margin-top: 22px; padding-top: 18px;
+  border-top: 1.5px dashed var(--line-soft);
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase; letter-spacing: 1px;
+}
+
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+#app { display: none; }
+#app.visible { display: flex; min-height: 100vh; }
+
+/* ---------- SIDEBAR ---------- */
+.sidebar {
+  width: 252px;
+  background: var(--ink);
+  color: var(--paper);
+  display: flex; flex-direction: column;
+  padding: 0 0 20px;
+  position: fixed; top: 0; left: 0; bottom: 0;
+  z-index: 60;
+  transition: transform .3s cubic-bezier(.3,1,.5,1);
+  border-right: 2.5px solid var(--accent);
+  overflow-y: auto;
+}
+/* Franja de peligro arriba */
+.sidebar::before {
+  content: '';
+  display: block;
+  height: 6px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--hazard) 0, var(--hazard) 8px,
+    var(--ink) 8px, var(--ink) 16px
+  );
+  flex-shrink: 0;
+}
+
+.sidebar-logo {
+  display: flex; align-items: center; gap: 12px;
+  padding: 22px 22px 18px;
+  border-bottom: 1.5px dashed rgba(240,235,224,.15);
+  margin-bottom: 16px;
+  position: relative;
+}
+.sidebar-logo-icon {
+  width: 44px; height: 44px;
+  background: var(--accent);
+  border: 2px solid var(--paper);
+  box-shadow: 3px 3px 0 var(--hazard);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+  transform: rotate(-4deg);
+  transition: transform .3s cubic-bezier(.3,1.4,.5,1);
+}
+.sidebar-logo:hover .sidebar-logo-icon { transform: rotate(4deg); }
+.sidebar-logo h1 {
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 16px; color: var(--paper); font-weight: 900;
+  letter-spacing: -.02em; text-transform: uppercase;
+}
+.sidebar-logo p {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px; color: var(--hazard);
+  text-transform: uppercase; letter-spacing: 2px;
+  margin-top: 3px; font-weight: 700;
+}
+
+.nav-section {
+  padding: 16px 22px 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px; text-transform: uppercase;
+  color: var(--steel-lt); font-weight: 800; letter-spacing: 2px;
+  position: relative;
+}
+.nav-section::after {
+  content: '';
+  position: absolute; left: 22px; right: 22px; bottom: 2px;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, var(--steel-lt) 0 4px, transparent 4px 8px);
+  opacity: .4;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 22px;
+  font-size: 12.5px; font-weight: 700;
+  cursor: pointer;
+  transition: all .15s ease;
+  color: var(--paper);
+  border-left: 4px solid transparent;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  position: relative;
+}
+.nav-item:hover {
+  background: rgba(240,235,224,.06);
+  border-left-color: var(--hazard);
+  padding-left: 26px;
+}
+.nav-item.active {
+  background: var(--accent);
+  color: var(--paper);
+  border-left-color: var(--hazard);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.1);
+}
+.nav-item.active::after {
+  content: '';
+  position: absolute; right: 14px; top: 50%;
+  width: 6px; height: 6px;
+  background: var(--paper);
+  border-radius: 50%;
+  transform: translateY(-50%);
+  box-shadow: 0 0 8px var(--paper);
+}
+.nav-item .nav-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 16px 22px;
+  border-top: 1.5px dashed rgba(240,235,224,.15);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--steel-lt);
+  display: flex; justify-content: space-between; align-items: center;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.sidebar-footer .dot {
+  width: 8px; height: 8px;
+  background: var(--hazard);
+  display: inline-block;
+  margin-right: 8px;
+  box-shadow: 0 0 10px var(--hazard);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%     { opacity: .5; transform: scale(.85); }
+}
+
+/* ---------- MAIN ---------- */
+.main {
+  flex: 1;
+  margin-left: 252px;
+  display: flex; flex-direction: column;
+  min-width: 0;
+  transition: margin .3s;
+}
+
+.topbar {
+  min-height: 74px;
+  background: var(--paper);
+  border-bottom: 2.5px solid var(--ink);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 28px;
+  position: sticky; top: 0;
+  z-index: 30;
+  gap: 16px;
+  box-shadow: 0 4px 0 var(--hazard);
+}
+.topbar-left { display: flex; align-items: center; min-width: 0; gap: 12px; }
+.topbar-left-inner { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.breadcrumb {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; color: var(--steel);
+  text-transform: uppercase; letter-spacing: 2px;
+  font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+}
+.breadcrumb::before {
+  content: '▸';
+  color: var(--accent);
+  font-size: 12px;
+}
+.page-title {
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 20px; font-weight: 900;
+  letter-spacing: -.02em;
+  text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.topbar-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+.theme-toggle {
+  width: 40px; height: 40px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .12s ease;
+  box-shadow: 2px 2px 0 var(--ink);
+  flex-shrink: 0;
+}
+.theme-toggle:hover { background: var(--hazard); transform: translate(-1px,-1px); box-shadow: 3px 3px 0 var(--ink); }
+.theme-toggle:active { transform: translate(2px,2px); box-shadow: 0 0 0 var(--ink); }
+
+.menu-toggle {
+  width: 40px; height: 40px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 18px;
+  align-items: center; justify-content: center;
+  display: none;
+  box-shadow: 2px 2px 0 var(--ink);
+  flex-shrink: 0;
+}
+
+.user-pill {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 14px 4px 4px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--ink);
+  font-weight: 800;
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  flex-shrink: 0;
+}
+.user-pill .avatar {
+  width: 30px; height: 30px;
+  background: var(--accent);
+  color: var(--paper);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 13px;
+  border: 1.5px solid var(--ink);
+}
+
+.content { padding: 28px 28px 60px; }
+
+/* ============================================================
+   BOTONES (chunky machine style)
+   ============================================================ */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 18px;
+  background: var(--accent);
+  color: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px; font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: all .08s ease;
+  white-space: nowrap;
+  font-family: 'JetBrains Mono', monospace;
+  position: relative;
+}
+.btn:hover { background: var(--accent-hov); transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--ink); }
+.btn:active { transform: translate(3px,3px); box-shadow: 0 0 0 var(--ink); }
+.btn.ghost {
+  background: var(--paper);
+  color: var(--ink);
+}
+.btn.ghost:hover { background: var(--hazard); }
+.btn.sm { padding: 6px 12px; font-size: 10.5px; box-shadow: 2px 2px 0 var(--ink); }
+
+/* ============================================================
+   KPI CARDS (con esquinas blueprint)
+   ============================================================ */
+.kpis-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-bottom: 28px;
+}
+.kpi {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  padding: 22px 20px 20px;
+  box-shadow: var(--shadow-1);
+  position: relative;
+  transition: all .2s cubic-bezier(.3,1.3,.5,1);
+  overflow: hidden;
+}
+.kpi:hover { transform: translate(-2px,-2px); box-shadow: var(--shadow-2); }
+.kpi::before,
+.kpi::after {
+  content: '';
+  position: absolute;
+  width: 14px; height: 14px;
+  border: 2px solid var(--accent);
+  pointer-events: none;
+}
+.kpi::before { top: -2px; left: -2px;  border-right: none; border-bottom: none; border-top-left-radius: var(--radius); }
+.kpi::after  { bottom: -2px; right: -2px; border-left: none; border-top: none; border-bottom-right-radius: var(--radius); }
+
+.kpi-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: var(--steel);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-weight: 800;
+  margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.kpi-label::before {
+  content: '';
+  width: 8px; height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3px var(--ink);
+}
+.kpi-value {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--ink);
+  letter-spacing: -.04em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.kpi.success .kpi-label::before { background: var(--success); }
+.kpi.warning .kpi-label::before { background: var(--warning); }
+.kpi.danger .kpi-label::before  { background: var(--danger); }
+.kpi.success { border-color: var(--success); }
+.kpi.warning { border-color: var(--warning); }
+.kpi.danger  { border-color: var(--danger); }
+
+/* ============================================================
+   SECCIONES (con franja de peligro)
+   ============================================================ */
+.section { margin-bottom: 28px; }
+.section-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 14px;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 2.5px solid var(--ink);
+  position: relative;
+}
+.section-header::after {
+  content: '';
+  position: absolute; left: 0; right: 0; bottom: -8px;
+  height: 4px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--hazard) 0, var(--hazard) 6px,
+    var(--ink) 6px, var(--ink) 12px
+  );
+  opacity: .85;
+  border-radius: 2px;
+  max-width: 120px;
+}
+.section-title {
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 15px;
+  color: var(--ink);
+  letter-spacing: -.02em;
+  text-transform: uppercase;
+  display: flex; align-items: center; gap: 10px;
+}
+.section-title::before {
+  content: '';
+  width: 10px; height: 10px;
+  background: var(--accent);
+  border: 1.5px solid var(--ink);
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   TABLAS
+   ============================================================ */
+.table-wrap {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-1);
+}
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  padding: 13px 18px;
+  text-align: left;
+  font-size: 13px;
+  border-bottom: 1.5px dashed var(--line-soft);
+}
+th {
+  background: var(--paper-alt);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--ink);
+  letter-spacing: 1.2px;
+  font-weight: 800;
+  white-space: nowrap;
+  border-bottom: 2px solid var(--ink);
+}
+td strong { font-weight: 700; }
+tr:last-child td { border-bottom: none; }
+tbody tr { transition: background .12s; }
+tbody tr:hover { background: var(--paper-alt); }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: var(--hazard); }
+tr.clickable:hover td { color: var(--ink) !important; }
+tr.clickable:hover td span { color: inherit !important; }
+
+.empty {
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--steel);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: var(--paper);
+  border-radius: var(--radius);
+  border: 2px dashed var(--line-soft);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+.empty-icon { font-size: 40px; margin-bottom: 12px; opacity: .4; display: block; }
+
+/* ============================================================
+   BADGES
+   ============================================================ */
+.badge {
+  padding: 4px 9px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 800;
+  display: inline-flex; align-items: center; gap: 4px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  border: 1.5px solid currentColor;
+}
+.badge.ok      { background: rgba(21,128,61,.12); color: var(--success); }
+.badge.bajo    { background: rgba(180,83,9,.12);  color: var(--warning); }
+.badge.cero    { background: rgba(185,28,28,.12); color: var(--danger); }
+.badge.neutral { background: var(--paper-alt);    color: var(--steel); }
+
+.cat-dot {
+  display: inline-block; width: 10px; height: 10px;
+  margin-right: 8px;
+  vertical-align: middle;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+/* ============================================================
+   MODALES
+   ============================================================ */
+.modal-bg {
+  display: none; position: fixed; inset: 0;
+  background: rgba(26,22,18,.72);
+  backdrop-filter: blur(4px);
+  align-items: center; justify-content: center;
+  z-index: 100; padding: 20px;
+  animation: fadeIn .15s ease;
+}
+.modal-bg.active { display: flex; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal {
+  background: var(--paper);
+  padding: 28px;
+  border: 2.5px solid var(--ink);
+  border-radius: var(--radius);
+  width: 100%; max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 8px 8px 0 var(--ink);
+  animation: modalIn .3s cubic-bezier(.2,1.3,.5,1);
+  position: relative;
+}
+@keyframes modalIn {
+  0%   { transform: scale(.94) translateY(20px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+.modal::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 5px;
+  background: repeating-linear-gradient(
+    45deg,
+    var(--hazard) 0, var(--hazard) 8px,
+    var(--ink) 8px, var(--ink) 16px
+  );
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.modal h3 {
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 17px;
+  margin-bottom: 20px;
+  margin-top: 8px;
+  text-transform: uppercase;
+  letter-spacing: -.02em;
+  color: var(--ink);
+}
+.modal label {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--ink);
+  margin: 14px 0 6px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+}
+.modal input, .modal select {
+  width: 100%;
+  padding: 10px 13px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--cream);
+  color: var(--ink);
+  transition: all .15s;
+  box-shadow: inset 2px 2px 0 rgba(0,0,0,.05);
+}
+.modal input:focus, .modal select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 2px 2px 0 rgba(0,0,0,.05), 0 0 0 3px var(--hazard);
+}
+.modal .actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1.5px dashed var(--line-soft);
+}
+
+/* ============================================================
+   ITEMS VENTA
+   ============================================================ */
+.item-line {
+  display: grid;
+  grid-template-columns: 1fr 70px 100px 36px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.item-line input, .item-line select {
+  padding: 8px 10px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--cream);
+  color: var(--ink);
+}
+.remove {
+  background: var(--danger);
+  color: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  height: 36px;
+  font-weight: 900;
+  font-size: 16px;
+  box-shadow: 2px 2px 0 var(--ink);
+  transition: all .08s;
+}
+.remove:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 var(--ink); }
+.remove:active { transform: translate(2px,2px); box-shadow: 0 0 0 var(--ink); }
+
+.dev-line {
+  display: grid;
+  grid-template-columns: 1fr 90px 150px;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1.5px dashed var(--line-soft);
+  font-size: 12.5px;
+}
+.dev-line:last-child { border-bottom: none; }
+.dev-line input, .dev-line select { padding: 8px 10px; font-size: 12.5px; font-family: 'JetBrains Mono', monospace; border: 2px solid var(--ink); background: var(--cream); color: var(--ink); border-radius: var(--radius-sm); }
+.dev-info { font-size: 11.5px; color: var(--steel); margin-top: 3px; font-family: 'JetBrains Mono', monospace; }
+.dev-info strong { color: var(--ink); }
+
+.venta-meta {
+  background: var(--paper-alt);
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  font-size: 12.5px;
+  color: var(--ink);
+  border-left: 4px solid var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+}
+.venta-meta strong { color: var(--ink); font-weight: 800; }
+
+.total-box {
+  background: var(--paper-alt);
+  padding: 16px;
+  border-radius: var(--radius-sm);
+  margin-top: 16px;
+  font-size: 13px;
+  border: 2px solid var(--ink);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+}
+.total-box strong { float: right; color: var(--accent); font-weight: 800; }
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+.toast {
+  position: fixed; bottom: 24px; right: 24px;
+  background: var(--ink); color: var(--paper);
+  padding: 14px 22px;
+  border: 2px solid var(--ink);
+  border-left: 5px solid var(--hazard);
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0;
+  transform: translateX(20px) rotate(1deg);
+  transition: all .3s cubic-bezier(.2,1.4,.5,1);
+  z-index: 200;
+  box-shadow: 5px 5px 0 var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  max-width: 340px;
+}
+.toast.show { opacity: 1; transform: translateX(0) rotate(-.5deg); }
+.toast.error { border-left-color: var(--danger); }
+
+/* ============================================================
+   TABS
+   ============================================================ */
+.tab-content { display: none; }
+.tab-content.active { display: block; animation: slideFade .25s ease; }
+@keyframes slideFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================
+   GRIDS REPORTES
+   ============================================================ */
+.grid-2-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; margin-bottom: 18px; }
+.grid-1-1 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+
+.chart-card {
+  background: var(--paper);
+  padding: 22px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  position: relative;
+  transition: box-shadow .2s, transform .2s;
+}
+.chart-card:hover { transform: translate(-1px,-1px); box-shadow: var(--shadow-2); }
+.chart-card h3 {
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 18px;
+  text-transform: uppercase;
+  letter-spacing: -.01em;
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1.5px dashed var(--line-soft);
+}
+.chart-card h3::before {
+  content: '';
+  width: 8px; height: 8px;
+  background: var(--accent);
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   OVERLAY MOBILE
+   ============================================================ */
+.sidebar-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(26,22,18,.7);
+  z-index: 55;
+  opacity: 0;
+  transition: opacity .25s;
+}
+.sidebar-overlay.active { display: block; opacity: 1; }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 1100px) {
+  .kpis-grid { grid-template-columns: repeat(2, 1fr); }
+  .grid-2-1 { grid-template-columns: 1fr; }
+  .grid-1-1 { grid-template-columns: 1fr; }
+}
+@media (max-width: 800px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main { margin-left: 0; }
+  .menu-toggle { display: flex; }
+  .topbar { padding: 0 16px; min-height: 66px; }
+  .content { padding: 20px 16px 60px; }
+  .kpis-grid { grid-template-columns: 1fr; gap: 14px; }
+  .page-title { font-size: 16px; }
+  .topbar-right .user-pill span:not(.avatar) { display: none; }
+  .topbar-right .user-pill { padding: 4px; border-radius: 50%; }
+  .topbar-right .btn.ghost:not(.theme-toggle):not(.menu-toggle) { display: none; }
+  .modal { padding: 22px; }
+  .item-line { grid-template-columns: 1fr 60px 80px 36px; gap: 5px; }
+  .dev-line { grid-template-columns: 1fr; gap: 8px; }
+  th, td { padding: 10px 12px; font-size: 12px; }
+  .section-title { font-size: 13px; }
+}
+@media (max-width: 500px) {
+  .kpi-value { font-size: 26px; }
+  .topbar-right .btn span:not(.nav-icon) { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">🔧</div>
+    <h1>Ferre<span>tería</span></h1>
+    <p class="sub">Sistema de Gestión · v1.0</p>
+    <label>Usuario</label>
+    <input id="login-usuario" value="admin" autocomplete="username">
+    <label>Contraseña</label>
+    <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password">
+    <button onclick="hacerLogin()">▸ Iniciar sesión</button>
+    <div class="login-error" id="login-error"></div>
+    <div class="login-hint">demo · admin / admin123</div>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app">
+
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">🔧</div>
+      <div>
+        <h1>Ferretería</h1>
+        <p>Taller · v1.0</p>
+      </div>
+    </div>
+
+    <div class="nav-section">Principal</div>
+    <div class="nav-item active" data-tab="tab-dashboard" onclick="switchTab('tab-dashboard')">
+      <span class="nav-icon">📊</span> Dashboard
+    </div>
+    <div class="nav-item" data-tab="tab-reportes" onclick="switchTab('tab-reportes')">
+      <span class="nav-icon">📈</span> Reportes
+    </div>
+
+    <div class="nav-section">Comercial</div>
+    <div class="nav-item" data-tab="tab-clientes" onclick="switchTab('tab-clientes')">
+      <span class="nav-icon">👥</span> Clientes
+    </div>
+    <div class="nav-item" data-tab="tab-cartera" onclick="switchTab('tab-cartera')">
+      <span class="nav-icon">💳</span> Cartera
+    </div>
+
+    <div class="sidebar-footer">
+      <span><span class="dot"></span>Online</span>
+      <span>MySQL 8.4</span>
+    </div>
+  </aside>
+
+  <div class="main">
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+        <div class="topbar-left-inner">
+          <div class="breadcrumb">Panel de control</div>
+          <div class="page-title" id="page-title">Dashboard</div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button class="theme-toggle" onclick="toggleTheme()" title="Cambiar tema" id="theme-toggle-btn">
+          <span id="theme-icon">🌙</span>
+        </button>
+        <button class="btn ghost" onclick="exportarExcelCompleto()" title="Exportar todo a Excel">
+          📊 <span>Excel</span>
+        </button>
+        <button class="btn ghost" onclick="abrirModalProducto()">＋ <span>Producto</span></button>
+        <button class="btn" onclick="abrirModalVenta()">🛒 <span>Venta</span></button>
+        <div class="user-pill">
+          <div class="avatar" id="user-avatar">A</div>
+          <span id="user-nombre">—</span>
+        </div>
+        <button class="btn ghost" onclick="hacerLogout()" title="Salir">⏻</button>
+      </div>
+    </header>
+
+    <main class="content">
+
+      <!-- ============ TAB: DASHBOARD ============ -->
+      <div class="tab-content active" id="tab-dashboard">
+
+        <div class="kpis-grid">
+          <div class="kpi">
+            <div class="kpi-label">Productos</div>
+            <div class="kpi-value" id="kpi-productos" data-value="0">0</div>
+          </div>
+          <div class="kpi success">
+            <div class="kpi-label">Stock total</div>
+            <div class="kpi-value" id="kpi-stock" data-value="0">0</div>
+          </div>
+          <div class="kpi warning">
+            <div class="kpi-label">Ventas</div>
+            <div class="kpi-value" id="kpi-ventas" data-value="0">0</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">Ingresos</div>
+            <div class="kpi-value mono" id="kpi-ingresos" data-value="0">$0</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title">Catálogo de productos</div>
+            <button class="btn ghost sm" onclick="exportarTabla('productos')">📊 Exportar</button>
+          </div>
+          <div class="table-wrap" id="tabla-productos"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title">Últimas ventas</div>
+            <button class="btn ghost sm" onclick="exportarTabla('ventas')">📊 Exportar</button>
+          </div>
+          <div class="table-wrap" id="tabla-ventas"></div>
+        </div>
+      </div>
+
+      <!-- ============ TAB: REPORTES ============ -->
+      <div class="tab-content" id="tab-reportes">
+
+        <div class="grid-2-1">
+          <div class="chart-card">
+            <h3>Ventas últimos 7 días</h3>
+            <canvas id="chart-ventas-dia" height="90"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Ventas por categoría</h3>
+            <canvas id="chart-categoria" height="200"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card" style="margin-bottom: 24px;">
+          <h3>Top 5 productos más vendidos</h3>
+          <canvas id="chart-top" height="70"></canvas>
+        </div>
+
+        <div class="section-header" style="margin-top: 32px;">
+          <div class="section-title">Devoluciones y defectuosos</div>
+          <button class="btn ghost sm" onclick="exportarTabla('defectuosos')">📊 Exportar</button>
+        </div>
+
+        <div class="kpis-grid" style="margin-bottom: 20px;">
+          <div class="kpi danger">
+            <div class="kpi-label">Defectuosas</div>
+            <div class="kpi-value" id="kpi-defectuoso" data-value="0">0</div>
+          </div>
+          <div class="kpi warning">
+            <div class="kpi-label">Reacondicionadas</div>
+            <div class="kpi-value" id="kpi-reacondicionado" data-value="0">0</div>
+          </div>
+          <div class="kpi danger">
+            <div class="kpi-label">Devol. defect.</div>
+            <div class="kpi-value" id="kpi-dev-defectuosas" data-value="0">0</div>
+          </div>
+          <div class="kpi warning">
+            <div class="kpi-label">No vendible</div>
+            <div class="kpi-value" id="kpi-stock-no-vendible" data-value="0">0</div>
+          </div>
+        </div>
+
+        <div class="grid-1-1">
+          <div class="chart-card">
+            <h3>Defectuosos por categoría</h3>
+            <canvas id="chart-def-categoria" height="200"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Devoluciones por condición</h3>
+            <canvas id="chart-dev-condicion" height="200"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <h3>Detalle de stock no vendible</h3>
+          <div id="tabla-defectuosos"></div>
+        </div>
+      </div>
+
+      <!-- ============ TAB: CLIENTES ============ -->
+      <div class="tab-content" id="tab-clientes">
+        <div class="section-header">
+          <div class="section-title">Clientes</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn ghost sm" onclick="exportarTabla('clientes')">📊 Exportar</button>
+            <button class="btn" onclick="abrirModalCliente()">＋ Nuevo</button>
+          </div>
+        </div>
+        <div class="table-wrap" id="tabla-clientes"></div>
+      </div>
+
+      <!-- ============ TAB: CARTERA ============ -->
+      <div class="tab-content" id="tab-cartera">
+        <div class="section-header">
+          <div class="section-title">Cuentas por cobrar</div>
+          <button class="btn ghost sm" onclick="exportarTabla('cartera')">📊 Exportar</button>
+        </div>
+        <div class="table-wrap" id="tabla-cartera"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ================= MODALES ================= -->
+<div class="modal-bg" id="modal-producto">
+  <div class="modal">
+    <h3>🔧 Nuevo producto</h3>
+    <label>Referencia</label><input id="p-referencia" placeholder="MART-002">
+    <label>Nombre</label><input id="p-nombre" placeholder="Martillo 20 oz">
+    <label>Categoría</label><select id="p-categoria"></select>
+    <label>Marca</label><select id="p-marca"></select>
+    <label>Unidad base</label><select id="p-unidad"></select>
+    <label>Presentación (nombre)</label><input id="p-presentacion" value="Unidad">
+    <label>Cantidad base</label><input id="p-cantidad" type="number" value="1" step="0.01">
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-producto')">Cancelar</button>
+      <button class="btn" onclick="guardarProducto()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-venta">
+  <div class="modal" style="max-width: 660px;">
+    <h3>🛒 Nueva venta</h3>
+    <label>Cliente (opcional)</label>
+    <select id="venta-cliente">
+      <option value="">Consumidor final (contado)</option>
+    </select>
+    <label style="margin-top: 20px;">Productos</label>
+    <div id="items-container"></div>
+    <button class="btn ghost sm" onclick="agregarLinea()" style="margin-top:8px;">＋ Agregar línea</button>
+    <div class="total-box">
+      Subtotal: <strong id="venta-subtotal">$0</strong><br>
+      IVA (19%): <strong id="venta-iva">$0</strong><br>
+      <span style="font-size:16px;">Total: <strong id="venta-total">$0</strong></span>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-venta')">Cancelar</button>
+      <button class="btn" onclick="guardarVenta()">Registrar venta</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-cliente">
+  <div class="modal">
+    <h3>👥 Nuevo cliente</h3>
+    <label>Nombre / Razón social *</label>
+    <input id="c-nombre" placeholder="Ferretería La Tuerca S.A.S.">
+    <label>Tipo de documento</label>
+    <select id="c-tipo">
+      <option value="CC">Cédula</option>
+      <option value="NIT">NIT</option>
+      <option value="PASAPORTE">Pasaporte</option>
+      <option value="OTRO">Otro</option>
+    </select>
+    <label>Número de documento</label>
+    <input id="c-doc" placeholder="900123456-7">
+    <label>Teléfono</label>
+    <input id="c-tel" placeholder="3001234567">
+    <label>Límite de crédito</label>
+    <input id="c-limite" type="number" value="0" step="1000">
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-cliente')">Cancelar</button>
+      <button class="btn" onclick="guardarCliente()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-pago-cxc">
+  <div class="modal">
+    <h3 id="pago-titulo">💰 Registrar pago</h3>
+    <div id="pago-meta" style="background:var(--paper-alt);padding:14px 16px;border-radius:var(--radius-sm);margin-bottom:14px;font-size:12.5px;font-family:'JetBrains Mono',monospace;border-left:4px solid var(--accent);"></div>
+    <label>Monto a pagar</label>
+    <input id="pago-monto" type="number" step="1000" min="0">
+    <label>Método</label>
+    <select id="pago-metodo">
+      <option value="EFECTIVO">Efectivo</option>
+      <option value="TRANSFERENCIA">Transferencia</option>
+      <option value="TARJETA">Tarjeta</option>
+      <option value="OTRO">Otro</option>
+    </select>
+    <label>Referencia (opcional)</label>
+    <input id="pago-ref" placeholder="Nº comprobante">
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-pago-cxc')">Cancelar</button>
+      <button class="btn" onclick="guardarPagoCxC()">Registrar pago</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-devolucion">
+  <div class="modal" style="max-width: 700px;">
+    <h3 id="dev-titulo">↩ Nueva devolución</h3>
+    <div id="dev-venta-meta"></div>
+    <label>Motivo</label>
+    <input id="dev-motivo" placeholder="Ej: Producto defectuoso, cliente insatisfecho...">
+    <label>Productos a devolver</label>
+    <div id="dev-lineas" style="margin-top: 6px;"></div>
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-devolucion')">Cancelar</button>
+      <button class="btn" onclick="guardarDevolucion()">Registrar devolución</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-kardex">
+  <div class="modal" style="max-width: 960px;">
+    <h3 id="kardex-titulo">📋 Kardex</h3>
+    <div id="kardex-producto" style="margin-bottom: 18px; font-size: 12.5px; color: var(--steel); background: var(--paper-alt); padding: 12px 16px; border-radius: var(--radius-sm); border-left: 4px solid var(--accent); font-family:'JetBrains Mono',monospace;"></div>
+    <div id="kardex-tabla"></div>
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModal('modal-kardex')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'http://localhost:3000/api';
+const fmt = n => new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', maximumFractionDigits:0 }).format(n || 0);
+const fmtNum = n => new Intl.NumberFormat('es-CO', { maximumFractionDigits:0 }).format(n || 0);
+
+let productosCache = [];
+let ventasCache = [];
+let clientesCache = [];
+let carteraCache = [];
+let defectuososCache = [];
+
+const COLORES_CATEGORIA = [
+  '#EA580C','#15803D','#B45309','#B91C1C','#7C3AED',
+  '#EA580C','#0369A1','#BE185D','#0D9488','#A16207',
+  '#991B1B','#1E40AF','#166534','#92400E','#6D28D9',
+];
+function colorCategoria(id) {
+  return COLORES_CATEGORIA[(Number(id) - 1) % COLORES_CATEGORIA.length];
+}
+
+// ============================================================
+// TEMA
+// ============================================================
+function toggleTheme() {
+  const html = document.documentElement;
+  const next = html.getAttribute('data-theme') === 'noche' ? 'taller' : 'noche';
+  html.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+  actualizarIconoTema();
+  setTimeout(() => {
+    if (document.getElementById('tab-reportes').classList.contains('active')) cargarReportes();
+  }, 100);
+}
+function actualizarIconoTema() {
+  const theme = document.documentElement.getAttribute('data-theme');
+  document.getElementById('theme-icon').textContent = theme === 'noche' ? '☀️' : '🌙';
+}
+(function initTheme() {
+  const saved = localStorage.getItem('theme') || 'taller';
+  document.documentElement.setAttribute('data-theme', saved);
+})();
+
+// ============================================================
+// SIDEBAR MOBILE
+// ============================================================
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  sb.classList.toggle('open');
+  ov.classList.toggle('active', sb.classList.contains('open'));
+}
+
+// ============================================================
+// ANIMACIÓN DE NÚMEROS
+// ============================================================
+function animarNumero(el, target, esMoneda = false) {
+  const start = Number(el.dataset.value) || 0;
+  if (start === target) { el.dataset.value = target; return; }
+  const dur = 700;
+  const t0 = performance.now();
+  function step(t) {
+    const p = Math.min((t - t0) / dur, 1);
+    const eased = 1 - Math.pow(1 - p, 3);
+    const val = Math.round(start + (target - start) * eased);
+    el.textContent = esMoneda ? fmt(val) : fmtNum(val);
+    if (p < 1) requestAnimationFrame(step);
+    else el.dataset.value = target;
+  }
+  requestAnimationFrame(step);
+}
+
+// ============================================================
+// CSS VARS
+// ============================================================
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// ============================================================
+// SESIÓN
+// ============================================================
+function getToken()     { return localStorage.getItem('token'); }
+function setToken(t)    { localStorage.setItem('token', t); }
+function clearToken()   { localStorage.removeItem('token'); localStorage.removeItem('user'); }
+function getUser()      { try { return JSON.parse(localStorage.getItem('user')); } catch { return null; } }
+function setUser(u)     { localStorage.setItem('user', JSON.stringify(u)); }
+
+async function apiFetch(path, options = {}) {
+  const token = getToken();
+  const headers = { ...(options.headers || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+  const r = await fetch(`${API}${path}`, { ...options, headers });
+  if (r.status === 401) { clearToken(); mostrarLogin(); throw new Error('Sesión expirada'); }
+  return r;
+}
+
+function mostrarLogin() {
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('app').classList.remove('visible');
+  document.getElementById('login-password').value = '';
+}
+function mostrarApp() {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app').classList.add('visible');
+  const u = getUser();
+  if (u) {
+    document.getElementById('user-nombre').textContent = u.nombre || u.usuario;
+    document.getElementById('user-avatar').textContent = (u.nombre || u.usuario || 'A').charAt(0).toUpperCase();
+  }
+  refrescar();
+}
+
+async function hacerLogin() {
+  const usuario  = document.getElementById('login-usuario').value.trim();
+  const password = document.getElementById('login-password').value;
+  const err      = document.getElementById('login-error');
+  err.textContent = '';
+  if (!usuario || !password) { err.textContent = 'Completa ambos campos'; return; }
+  try {
+    const r = await fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario, password }),
+    });
+    const data = await r.json();
+    if (!r.ok) { err.textContent = data.error || 'Error'; return; }
+    setToken(data.token);
+    setUser(data.user);
+    mostrarApp();
+  } catch { err.textContent = 'No se pudo conectar al servidor'; }
+}
+
+function hacerLogout() { clearToken(); mostrarLogin(); }
+
+// ---------- TOAST ----------
+function toast(msg, error = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (error ? ' error' : '');
+  setTimeout(() => t.className = 'toast', 2800);
+}
+
+// ---------- MODALES ----------
+function abrirModal(id) { document.getElementById(id).classList.add('active'); }
+function cerrarModal(id) { document.getElementById(id).classList.remove('active'); }
+
+// ---------- UTILS ----------
+function badge(stock, color) {
+  if (stock === 0) return '<span class="badge cero">Sin stock</span>';
+  if (stock < 5)  return '<span class="badge bajo">Bajo</span>';
+  return '<span class="badge ok">OK</span>';
+}
+function emptyState(icon, text) {
+  return `<div class="empty"><span class="empty-icon">${icon}</span>${text}</div>`;
+}
+
+// ============================================================
+// EXPORTACIÓN A EXCEL
+// ============================================================
+function exportarLibro(sheets, filename) {
+  const wb = XLSX.utils.book_new();
+  Object.entries(sheets).forEach(([name, rows]) => {
+    if (!rows || !rows.length) return;
+    const ws = XLSX.utils.json_to_sheet(rows);
+    // Autoajustar ancho
+    const cols = Object.keys(rows[0]).map(k => ({
+      wch: Math.max(k.length + 2, ...rows.map(r => String(r[k] ?? '').length + 2))
+    }));
+    ws['!cols'] = cols;
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  });
+  XLSX.writeFile(wb, filename);
+}
+
+async function exportarExcelCompleto() {
+  try {
+    toast('Generando Excel...');
+    const [prod, ventas, clientes, cxc, kpis, defectuosos] = await Promise.all([
+      apiFetch('/productos').then(r => r.json()),
+      apiFetch('/ventas').then(r => r.json()),
+      apiFetch('/clientes').then(r => r.json()),
+      apiFetch('/cuentas-por-cobrar').then(r => r.json()),
+      apiFetch('/kpis').then(r => r.json()),
+      apiFetch('/reportes/defectuosos').then(r => r.json()),
+    ]);
+
+    const fecha = new Date().toISOString().slice(0, 10);
+
+    exportarLibro({
+      'Resumen': [{
+        'Generado': new Date().toLocaleString('es-CO'),
+        'Total productos': kpis.total_productos,
+        'Total stock': kpis.total_stock,
+        'Total ventas': kpis.total_ventas,
+        'Total ingresos': kpis.total_ingresos,
+      }],
+      'Productos': prod.map(p => ({
+        Referencia: p.referencia,
+        Producto: p.nombre,
+        Categoría: p.categoria,
+        Marca: p.marca || '—',
+        Unidad: p.unidad,
+        Stock: Number(p.stock),
+        Defectuosos: Number(p.defectuosos || 0),
+        Reacondicionados: Number(p.reacondicionados || 0),
+      })),
+      'Ventas': ventas.map(v => ({
+        ID: v.id_venta,
+        Fecha: String(v.fecha_hora).slice(0, 16),
+        Cliente: v.cliente,
+        Vendedor: v.vendedor,
+        Total: Number(v.total),
+        Estado: v.estado,
+      })),
+      'Clientes': clientes.map(c => ({
+        ID: c.id_cliente,
+        Nombre: c.nombre,
+        Documento: `${c.tipo_documento} ${c.numero_documento || ''}`.trim(),
+        Teléfono: c.telefono || '—',
+        'Límite crédito': Number(c.limite_credito),
+        'Deuda actual': Number(c.deuda_actual || 0),
+        Estado: c.estado,
+      })),
+      'Cartera': cxc.map(x => ({
+        ID: x.id_cuenta,
+        Cliente: x.cliente,
+        Venta: x.id_venta,
+        Vence: String(x.fecha_vencimiento).slice(0, 10),
+        'Monto original': Number(x.monto_original),
+        Saldo: Number(x.saldo),
+        Estado: x.estado,
+      })),
+      'Defectuosos': defectuosos.porProducto.map(d => ({
+        Referencia: d.referencia,
+        Producto: d.nombre,
+        Categoría: d.categoria,
+        Condición: d.condicion,
+        Cantidad: Number(d.cantidad),
+      })),
+    }, `Reporte_Ferreteria_${fecha}.xlsx`);
+
+    toast('✓ Excel exportado correctamente');
+  } catch (e) {
+    toast('Error al exportar: ' + e.message, true);
+  }
+}
+
+async function exportarTabla(tipo) {
+  try {
+    const fecha = new Date().toISOString().slice(0, 10);
+    if (tipo === 'productos') {
+      exportarLibro({ Productos: productosCache.map(p => ({
+        Referencia: p.referencia, Producto: p.nombre, Categoría: p.categoria,
+        Marca: p.marca || '—', Stock: Number(p.stock),
+        Defectuosos: Number(p.defectuosos || 0), Reacondicionados: Number(p.reacondicionados || 0),
+      }))}, `Productos_${fecha}.xlsx`);
+    } else if (tipo === 'ventas') {
+      exportarLibro({ Ventas: ventasCache.map(v => ({
+        ID: v.id_venta, Fecha: String(v.fecha_hora).slice(0, 16), Cliente: v.cliente,
+        Vendedor: v.vendedor, Total: Number(v.total), Estado: v.estado,
+      }))}, `Ventas_${fecha}.xlsx`);
+    } else if (tipo === 'clientes') {
+      exportarLibro({ Clientes: clientesCache.map(c => ({
+        ID: c.id_cliente, Nombre: c.nombre,
+        Documento: `${c.tipo_documento} ${c.numero_documento || ''}`.trim(),
+        Teléfono: c.telefono || '—', 'Límite crédito': Number(c.limite_credito),
+        'Deuda actual': Number(c.deuda_actual || 0), Estado: c.estado,
+      }))}, `Clientes_${fecha}.xlsx`);
+    } else if (tipo === 'cartera') {
+      exportarLibro({ Cartera: carteraCache.map(x => ({
+        ID: x.id_cuenta, Cliente: x.cliente, Venta: x.id_venta,
+        Vence: String(x.fecha_vencimiento).slice(0, 10),
+        'Monto original': Number(x.monto_original), Saldo: Number(x.saldo), Estado: x.estado,
+      }))}, `Cartera_${fecha}.xlsx`);
+    } else if (tipo === 'defectuosos') {
+      exportarLibro({ Defectuosos: defectuososCache.map(d => ({
+        Referencia: d.referencia, Producto: d.nombre, Categoría: d.categoria,
+        Condición: d.condicion, Cantidad: Number(d.cantidad),
+      }))}, `Defectuosos_${fecha}.xlsx`);
+    }
+    toast('✓ Exportado correctamente');
+  } catch (e) {
+    toast('Error: ' + e.message, true);
+  }
+}
+
+// ---------- DATOS ----------
+async function cargarKPIs() {
+  const d = await (await apiFetch('/kpis')).json();
+  animarNumero(document.getElementById('kpi-productos'), Number(d.total_productos));
+  animarNumero(document.getElementById('kpi-stock'),     Number(d.total_stock));
+  animarNumero(document.getElementById('kpi-ventas'),    Number(d.total_ventas));
+  animarNumero(document.getElementById('kpi-ingresos'),  Number(d.total_ingresos), true);
+}
+
+async function cargarProductos() {
+  const data = await (await apiFetch('/productos')).json();
+  productosCache = data;
+  const c = document.getElementById('tabla-productos');
+  if (!data.length) return c.innerHTML = emptyState('📦', 'Sin productos');
+  c.innerHTML = `<table><thead><tr>
+    <th>Referencia</th><th>Producto</th><th>Categoría</th><th>Marca</th>
+    <th style="text-align:right;">Vendible</th>
+    <th style="text-align:right;">Def.</th>
+    <th style="text-align:right;">Reac.</th>
+    <th>Estado</th>
+  </tr></thead><tbody>${data.map(p => `<tr class="clickable" onclick="verKardex(${p.id_producto})">
+    <td><strong>${p.referencia}</strong></td>
+    <td>${p.nombre}</td>
+    <td><span class="cat-dot" style="background:${colorCategoria(p.id_categoria)}"></span>${p.categoria}</td>
+    <td>${p.marca ?? '—'}</td>
+    <td style="text-align:right;" class="mono"><strong>${Number(p.stock).toFixed(0)}</strong></td>
+    <td style="text-align:right;" class="mono">${Number(p.defectuosos || 0) > 0 ? `<span style="color:var(--danger);font-weight:700;">${Number(p.defectuosos).toFixed(0)}</span>` : '—'}</td>
+    <td style="text-align:right;" class="mono">${Number(p.reacondicionados || 0) > 0 ? `<span style="color:var(--warning);font-weight:700;">${Number(p.reacondicionados).toFixed(0)}</span>` : '—'}</td>
+    <td>${badge(Number(p.stock), colorCategoria(p.id_categoria))}</td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+async function cargarVentas() {
+  const data = await (await apiFetch('/ventas')).json();
+  ventasCache = data;
+  const c = document.getElementById('tabla-ventas');
+  if (!data.length) return c.innerHTML = emptyState('💰', 'Sin ventas');
+  c.innerHTML = `<table><thead><tr>
+    <th>#</th><th>Fecha</th><th>Cliente</th><th>Vendedor</th>
+    <th style="text-align:right;">Total</th><th>Estado</th><th></th>
+  </tr></thead><tbody>${data.map(v => `<tr>
+    <td class="mono">#${v.id_venta}</td>
+    <td class="mono" style="font-size:11.5px;">${String(v.fecha_hora).slice(0,16)}</td>
+    <td>${v.cliente}</td>
+    <td>${v.vendedor}</td>
+    <td style="text-align:right;" class="mono"><strong>${fmt(v.total)}</strong></td>
+    <td>${v.estado}</td>
+    <td style="display:flex;gap:6px;">
+      ${v.estado !== 'ANULADA' && v.estado !== 'PAGADA' ?
+        `<button class="btn ghost sm" onclick="abrirModalCredito(${v.id_venta})">Crédito</button>` : ''}
+      ${v.estado !== 'ANULADA' ?
+        `<button class="btn ghost sm" onclick="abrirModalDevolucion(${v.id_venta})">Devolver</button>` : ''}
+    </td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+function refrescar() { cargarKPIs(); cargarProductos(); cargarVentas(); }
+
+// ---------- PRODUCTO ----------
+async function abrirModalProducto() {
+  const c = await (await apiFetch('/catalogos')).json();
+  const fill = (sel, arr, val, lab) => {
+    sel.innerHTML = arr.map(x => `<option value="${x[val]}">${x[lab]}</option>`).join('');
+  };
+  fill(document.getElementById('p-categoria'), c.categorias, 'id_categoria', 'nombre');
+  fill(document.getElementById('p-marca'),     c.marcas,     'id_marca',     'nombre');
+  fill(document.getElementById('p-unidad'),    c.unidades,   'id_unidad',    'nombre');
+  abrirModal('modal-producto');
+}
+
+async function guardarProducto() {
+  const body = {
+    referencia:     document.getElementById('p-referencia').value.trim(),
+    nombre:         document.getElementById('p-nombre').value.trim(),
+    id_categoria:   Number(document.getElementById('p-categoria').value),
+    id_marca:       Number(document.getElementById('p-marca').value),
+    id_unidad_base: Number(document.getElementById('p-unidad').value),
+    presentacion:   document.getElementById('p-presentacion').value.trim() || 'Unidad',
+    cantidad_base:  Number(document.getElementById('p-cantidad').value) || 1,
+  };
+  if (!body.referencia || !body.nombre) return toast('Referencia y nombre obligatorios', true);
+  const r = await apiFetch('/productos', { method: 'POST', body: JSON.stringify(body) });
+  const data = await r.json();
+  if (!r.ok) return toast(data.error || 'Error', true);
+  toast('Producto creado ✓');
+  cerrarModal('modal-producto');
+  ['p-referencia','p-nombre'].forEach(id => document.getElementById(id).value = '');
+  refrescar();
+}
+
+// ---------- VENTA ----------
+async function abrirModalVenta() {
+  if (!productosCache.length) return toast('Primero crea un producto', true);
+  try {
+    const clientes = await (await apiFetch('/clientes')).json();
+    const sel = document.getElementById('venta-cliente');
+    sel.innerHTML = '<option value="">Consumidor final (contado)</option>' +
+      clientes.map(c => `<option value="${c.id_cliente}">${c.nombre}</option>`).join('');
+  } catch {}
+  document.getElementById('items-container').innerHTML = '';
+  agregarLinea();
+  abrirModal('modal-venta');
+}
+
+function agregarLinea() {
+  const div = document.createElement('div');
+  div.className = 'item-line';
+  div.innerHTML = `
+    <select class="item-producto">${productosCache.map(p =>
+      `<option value="${p.id_producto}">${p.referencia} — ${p.nombre}</option>`).join('')}</select>
+    <input type="number" class="item-cantidad" value="1" min="1" step="1">
+    <input type="number" class="item-precio" value="45000" min="0" step="100">
+    <button class="remove" onclick="this.parentElement.remove(); recalcular();">×</button>
+  `;
+  document.getElementById('items-container').appendChild(div);
+  div.querySelectorAll('input').forEach(i => i.addEventListener('input', recalcular));
+  recalcular();
+}
+
+function recalcular() {
+  let subtotal = 0;
+  document.querySelectorAll('.item-line').forEach(l => {
+    const c = Number(l.querySelector('.item-cantidad').value) || 0;
+    const p = Number(l.querySelector('.item-precio').value)   || 0;
+    subtotal += c * p;
+  });
+  const iva = Math.round(subtotal * 0.19);
+  document.getElementById('venta-subtotal').textContent = fmt(subtotal);
+  document.getElementById('venta-iva').textContent      = fmt(iva);
+  document.getElementById('venta-total').textContent    = fmt(subtotal + iva);
+}
+
+async function guardarVenta() {
+  const items = [];
+  document.querySelectorAll('.item-line').forEach(l => {
+    const cant = Number(l.querySelector('.item-cantidad').value) || 0;
+    const prec = Number(l.querySelector('.item-precio').value)   || 0;
+    if (cant > 0) {
+      items.push({
+        id_producto:     Number(l.querySelector('.item-producto').value),
+        id_presentacion: 1,
+        cantidad:        cant,
+        precio_unitario: prec,
+        iva:             Math.round(cant * prec * 0.19),
+      });
+    }
+  });
+  if (!items.length) return toast('Agrega al menos una línea', true);
+  const id_cliente = Number(document.getElementById('venta-cliente').value) || null;
+  const r = await apiFetch('/ventas', { method: 'POST', body: JSON.stringify({ items, id_cliente }) });
+  const data = await r.json();
+  if (!r.ok) return toast(data.error || 'Error', true);
+  toast(`Venta #${data.venta.id_venta} registrada ✓`);
+  cerrarModal('modal-venta');
+  refrescar();
+}
+
+// ---------- TABS ----------
+const TITULOS = {
+  'tab-dashboard': 'Dashboard',
+  'tab-reportes':  'Reportes',
+  'tab-clientes':  'Clientes',
+  'tab-cartera':   'Cartera',
+};
+
+function switchTab(id) {
+  document.querySelectorAll('.nav-item').forEach(t => t.classList.toggle('active', t.dataset.tab === id));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === id));
+  document.getElementById('page-title').textContent = TITULOS[id] || '';
+  if (window.innerWidth <= 800) {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('active');
+  }
+  if (id === 'tab-clientes') cargarClientes();
+  if (id === 'tab-cartera')  cargarCartera();
+  if (id === 'tab-reportes') cargarReportes();
+}
+
+// ---------- CLIENTES ----------
+async function cargarClientes() {
+  const data = await (await apiFetch('/clientes')).json();
+  clientesCache = data;
+  const c = document.getElementById('tabla-clientes');
+  if (!data.length) return c.innerHTML = emptyState('👥', 'Sin clientes');
+  c.innerHTML = `<table><thead><tr>
+    <th>#</th><th>Nombre</th><th>Documento</th><th>Teléfono</th>
+    <th style="text-align:right;">Límite</th><th style="text-align:right;">Deuda</th><th>Estado</th>
+  </tr></thead><tbody>${data.map(cl => {
+    const deuda = Number(cl.deuda_actual);
+    const limite = Number(cl.limite_credito);
+    const sobrepasado = limite > 0 && deuda > limite;
+    return `<tr>
+      <td class="mono">#${cl.id_cliente}</td>
+      <td><strong>${cl.nombre}</strong></td>
+      <td class="mono" style="font-size:11.5px;">${cl.tipo_documento} ${cl.numero_documento || '—'}</td>
+      <td class="mono" style="font-size:11.5px;">${cl.telefono || '—'}</td>
+      <td style="text-align:right;" class="mono">${fmt(limite)}</td>
+      <td style="text-align:right;color:${sobrepasado ? 'var(--danger)' : 'var(--success)'};font-weight:700;" class="mono">${fmt(deuda)}</td>
+      <td>${cl.estado}</td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+async function abrirModalCliente() {
+  ['c-nombre','c-doc','c-tel'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('c-limite').value = 0;
+  document.getElementById('c-tipo').value = 'CC';
+  abrirModal('modal-cliente');
+}
+
+async function guardarCliente() {
+  const body = {
+    nombre:           document.getElementById('c-nombre').value.trim(),
+    tipo_documento:   document.getElementById('c-tipo').value,
+    numero_documento: document.getElementById('c-doc').value.trim(),
+    telefono:         document.getElementById('c-tel').value.trim(),
+    limite_credito:   Number(document.getElementById('c-limite').value) || 0,
+  };
+  if (!body.nombre) return toast('El nombre es obligatorio', true);
+  const r = await apiFetch('/clientes', { method: 'POST', body: JSON.stringify(body) });
+  const data = await r.json();
+  if (!r.ok) return toast(data.error || 'Error', true);
+  toast('Cliente creado ✓');
+  cerrarModal('modal-cliente');
+  cargarClientes();
+}
+
+// ---------- CARTERA ----------
+async function cargarCartera() {
+  const data = await (await apiFetch('/cuentas-por-cobrar')).json();
+  carteraCache = data;
+  const c = document.getElementById('tabla-cartera');
+  if (!data.length) return c.innerHTML = emptyState('💳', 'Sin cuentas por cobrar');
+  c.innerHTML = `<table><thead><tr>
+    <th>#</th><th>Cliente</th><th>Venta</th><th>Vence</th>
+    <th style="text-align:right;">Original</th><th style="text-align:right;">Saldo</th>
+    <th>Estado</th><th></th>
+  </tr></thead><tbody>${data.map(cx => `<tr>
+    <td class="mono">#${cx.id_cuenta}</td>
+    <td><strong>${cx.cliente}</strong></td>
+    <td class="mono">#${cx.id_venta}</td>
+    <td class="mono" style="font-size:11.5px;">${String(cx.fecha_vencimiento).slice(0,10)}</td>
+    <td style="text-align:right;" class="mono">${fmt(cx.monto_original)}</td>
+    <td style="text-align:right;color:var(--danger);font-weight:700;" class="mono">${fmt(cx.saldo)}</td>
+    <td>${cx.estado}</td>
+    <td>${cx.estado !== 'PAGADA' ?
+      `<button class="btn sm" onclick="abrirModalPagoCxC(${cx.id_cuenta})">Pagar</button>` : ''}</td>
+  </tr>`).join('')}</tbody></table>`;
+}
+
+async function abrirModalCredito(id_venta) {
+  if (!confirm('¿Generar cuenta por cobrar a 30 días?')) return;
+  const r = await apiFetch(`/ventas/${id_venta}/credito`, {
+    method: 'POST',
+    body: JSON.stringify({ dias_vencimiento: 30 }),
+  });
+  const data = await r.json();
+  if (!r.ok) return toast(data.error || 'Error', true);
+  toast('CxC creada ✓');
+  cargarVentas();
+}
+
+let cxcActual = null;
+
+async function abrirModalPagoCxC(id_cuenta) {
+  const list = await (await apiFetch('/cuentas-por-cobrar')).json();
+  const cx = list.find(x => x.id_cuenta === id_cuenta);
+  if (!cx) return toast('Cuenta no encontrada', true);
+  cxcActual = id_cuenta;
+  document.getElementById('pago-titulo').textContent = `💰 Pago — Venta #${cx.id_venta}`;
+  document.getElementById('pago-meta').innerHTML = `
+    <strong>${cx.cliente}</strong><br>
+    Original: ${fmt(cx.monto_original)}<br>
+    Saldo: <strong>${fmt(cx.saldo)}</strong>
+  `;
+  document.getElementById('pago-monto').value = cx.saldo;
+  document.getElementById('pago-metodo').value = 'EFECTIVO';
+  document.getElementById('pago-ref').value = '';
+  abrirModal('modal-pago-cxc');
+}
+
+async function guardarPagoCxC() {
+  const body = {
+    monto:       Number(document.getElementById('pago-monto').value),
+    metodo_pago: document.getElementById('pago-metodo').value,
+    referencia:  document.getElementById('pago-ref').value.trim(),
+  };
+  if (body.monto <= 0) return toast('Monto debe ser positivo', true);
+  const r = await apiFetch(`/cuentas-por-cobrar/${cxcActual}/pago`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  const data = await r.json();
+  if (!r.ok) return toast(data.error || 'Error', true);
+  toast('Pago registrado ✓');
+  cerrarModal('modal-pago-cxc');
+  cargarCartera();
+  cargarVentas();
+}
+
+// ---------- REPORTES ----------
+let charts = {};
+
+async function cargarReportes() {
+  await Promise.all([
+    cargarChartVentasDia(),
+    cargarChartTopProductos(),
+    cargarChartCategorias(),
+    cargarReporteDefectuosos(),
+  ]);
+}
+
+async function cargarChartVentasDia() {
+  const data = await (await apiFetch('/reportes/ventas-por-dia')).json();
+  const mapa = {};
+  data.forEach(d => { mapa[String(d.fecha).slice(0,10)] = Number(d.total); });
+  const labels = [], valores = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0,10);
+    labels.push(d.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric' }));
+    valores.push(mapa[key] || 0);
+  }
+  const accent = cssVar('--accent') || '#EA580C';
+  const border = cssVar('--line-soft') || '#D4CCBD';
+  const textMuted = cssVar('--steel') || '#78716C';
+  if (charts.ventasDia) charts.ventasDia.destroy();
+  charts.ventasDia = new Chart(document.getElementById('chart-ventas-dia'), {
+    type: 'line',
+    data: { labels, datasets: [{
+      label: 'Ventas', data: valores,
+      borderColor: accent,
+      backgroundColor: accent + '22',
+      tension: 0.4, fill: true,
+      pointRadius: 5, pointBackgroundColor: accent,
+      pointBorderColor: cssVar('--paper'), pointBorderWidth: 2,
+      borderWidth: 3,
+    }]},
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmt(c.parsed.y) } } },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: v => fmt(v), color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: border } },
+        x: { ticks: { color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+async function cargarChartTopProductos() {
+  const data = await (await apiFetch('/reportes/top-productos')).json();
+  if (charts.top) charts.top.destroy();
+  if (!data.length) {
+    document.getElementById('chart-top').parentElement.innerHTML =
+      '<h3>Top 5 productos</h3>' + emptyState('📊', 'Sin datos');
+    return;
+  }
+  const border = cssVar('--line-soft');
+  const textMuted = cssVar('--steel');
+  charts.top = new Chart(document.getElementById('chart-top'), {
+    type: 'bar',
+    data: {
+      labels: data.map(p => `${p.referencia} — ${p.nombre}`),
+      datasets: [{
+        label: 'Unidades', data: data.map(p => Number(p.unidades)),
+        backgroundColor: ['#EA580C','#15803D','#B45309','#B91C1C','#7C3AED'],
+        borderRadius: 3, barThickness: 26,
+        borderColor: cssVar('--ink'), borderWidth: 1.5,
+      }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, ticks: { color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: border } },
+        y: { ticks: { color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { display: false } }
+      }
+    }
+  });
+}
+
+async function cargarChartCategorias() {
+  const data = await (await apiFetch('/reportes/por-categoria')).json();
+  if (charts.categoria) charts.categoria.destroy();
+  if (!data.length) {
+    document.getElementById('chart-categoria').parentElement.innerHTML =
+      '<h3>Ventas por categoría</h3>' + emptyState('📊', 'Sin datos');
+    return;
+  }
+  const textMuted = cssVar('--steel');
+  charts.categoria = new Chart(document.getElementById('chart-categoria'), {
+    type: 'doughnut',
+    data: {
+      labels: data.map(c => c.categoria),
+      datasets: [{
+        data: data.map(c => Number(c.total)),
+        backgroundColor: COLORES_CATEGORIA,
+        borderWidth: 3, borderColor: cssVar('--ink'),
+      }]
+    },
+    options: {
+      responsive: true, cutout: '62%',
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { size: 10, family: 'JetBrains Mono' }, padding: 10, boxWidth: 10, boxHeight: 10, color: textMuted } },
+        tooltip: { callbacks: { label: c => `${c.label}: ${fmt(c.parsed)}` } }
+      }
+    }
+  });
+}
+
+async function cargarReporteDefectuosos() {
+  const data = await (await apiFetch('/reportes/defectuosos')).json();
+  const { porProducto, porCategoria, devolucionesPorCondicion, kpis } = data;
+  defectuososCache = porProducto;
+
+  animarNumero(document.getElementById('kpi-defectuoso'),      Number(kpis.total_defectuoso));
+  animarNumero(document.getElementById('kpi-reacondicionado'), Number(kpis.total_reacondicionado));
+  animarNumero(document.getElementById('kpi-dev-defectuosas'), Number(kpis.devoluciones_defectuosas));
+  animarNumero(document.getElementById('kpi-stock-no-vendible'), Number(kpis.total_defectuoso) + Number(kpis.total_reacondicionado));
+
+  const textMuted = cssVar('--steel');
+  const border = cssVar('--line-soft');
+
+  if (charts.defCategoria) charts.defCategoria.destroy();
+  if (porCategoria.length) {
+    charts.defCategoria = new Chart(document.getElementById('chart-def-categoria'), {
+      type: 'doughnut',
+      data: {
+        labels: porCategoria.map(c => c.categoria),
+        datasets: [{
+          data: porCategoria.map(c => Number(c.total)),
+          backgroundColor: ['#B91C1C','#EA580C','#B45309','#991B1B','#C2410C','#92400E','#7F1D1D','#A16207'],
+          borderWidth: 3, borderColor: cssVar('--ink'),
+        }]
+      },
+      options: {
+        cutout: '62%',
+        plugins: { legend: { position: 'bottom', labels: { font: { size: 10, family: 'JetBrains Mono' }, padding: 10, boxWidth: 10, boxHeight: 10, color: textMuted } } }
+      }
+    });
+  } else {
+    document.getElementById('chart-def-categoria').parentElement.innerHTML =
+      '<h3>Defectuosos por categoría</h3>' + emptyState('📊', 'Sin datos');
+  }
+
+  if (charts.devCondicion) charts.devCondicion.destroy();
+  if (devolucionesPorCondicion.length) {
+    const colorMap = { BUENO: '#15803D', DEFECTUOSO: '#B91C1C', REACONDICIONADO: '#B45309' };
+    charts.devCondicion = new Chart(document.getElementById('chart-dev-condicion'), {
+      type: 'bar',
+      data: {
+        labels: devolucionesPorCondicion.map(d => d.condicion),
+        datasets: [{
+          label: 'Unidades', data: devolucionesPorCondicion.map(d => Number(d.unidades)),
+          backgroundColor: devolucionesPorCondicion.map(d => colorMap[d.condicion] || '#78716C'),
+          borderRadius: 3, barThickness: 40,
+          borderColor: cssVar('--ink'), borderWidth: 1.5,
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, ticks: { color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: border } },
+          x: { ticks: { color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { display: false } }
+        }
+      }
+    });
+  } else {
+    document.getElementById('chart-dev-condicion').parentElement.innerHTML =
+      '<h3>Devoluciones por condición</h3>' + emptyState('📊', 'Sin datos');
+  }
+
+  const cont = document.getElementById('tabla-defectuosos');
+  if (!porProducto.length) {
+    cont.innerHTML = emptyState('🔧', 'Sin stock no vendible');
+  } else {
+    cont.innerHTML = `<table>
+      <thead><tr>
+        <th>Referencia</th><th>Producto</th><th>Categoría</th>
+        <th>Condición</th><th style="text-align:right;">Cantidad</th>
+      </tr></thead><tbody>${porProducto.map(p => {
+        const color = p.condicion === 'DEFECTUOSO' ? 'var(--danger)' : 'var(--warning)';
+        return `<tr>
+          <td class="mono"><strong>${p.referencia}</strong></td>
+          <td>${p.nombre}</td>
+          <td>${p.categoria}</td>
+          <td><span class="badge" style="background:${color}22;color:${color};">${p.condicion}</span></td>
+          <td style="text-align:right;font-weight:800;color:${color};" class="mono">${Number(p.cantidad).toFixed(0)}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }
+}
+
+// ---------- DEVOLUCIÓN ----------
+let devVentaActual = null;
+
+async function abrirModalDevolucion(id_venta) {
+  const r = await apiFetch(`/ventas/${id_venta}/detalle`);
+  if (!r.ok) return toast('Error al cargar venta', true);
+  const { venta, lineas } = await r.json();
+  const hayDisponible = lineas.some(l => l.cantidad_disponible > 0);
+  if (!hayDisponible) return toast('Venta ya devuelta por completo', true);
+  devVentaActual = id_venta;
+  document.getElementById('dev-titulo').textContent = `↩ Devolución — Venta #${venta.id_venta}`;
+  document.getElementById('dev-venta-meta').innerHTML = `
+    <div class="venta-meta">
+      <strong>${venta.cliente}</strong><br>
+      ${String(venta.fecha_hora).slice(0,16)} · Total: <strong>${fmt(venta.total)}</strong>
+    </div>
+  `;
+  document.getElementById('dev-lineas').innerHTML = lineas.map(l => `
+    <div class="dev-line" data-id="${l.id_detalle_venta}" data-max="${l.cantidad_disponible}">
+      <div>
+        <div><strong>${l.referencia}</strong> — ${l.producto}</div>
+        <div class="dev-info">Vendido: ${Number(l.cantidad_vendida).toFixed(0)} · Devuelto: ${Number(l.cantidad_devuelta).toFixed(0)} · <strong>Disp: ${Number(l.cantidad_disponible).toFixed(0)}</strong></div>
+      </div>
+      <input type="number" class="dev-cantidad" value="0" min="0" max="${l.cantidad_disponible}" step="1">
+      <select class="dev-condicion">
+        <option value="BUENO">✓ Buen estado</option>
+        <option value="DEFECTUOSO">✗ Defectuoso</option>
+        <option value="REACONDICIONADO">↻ Reacondicionado</option>
+      </select>
+    </div>
+  `).join('');
+  document.getElementById('dev-motivo').value = '';
+  abrirModal('modal-devolucion');
+}
+
+async function guardarDevolucion() {
+  const motivo = document.getElementById('dev-motivo').value.trim();
+  const items = [];
+  let errorMax = null;
+  document.querySelectorAll('.dev-line').forEach(l => {
+    const cant = Number(l.querySelector('.dev-cantidad').value) || 0;
+    const max  = Number(l.dataset.max);
+    if (cant > 0) {
+      if (cant > max) { errorMax = `Máximo ${max} por línea`; return; }
+      items.push({
+        id_detalle_venta:   Number(l.dataset.id),
+        cantidad:           cant,
+        condicion_producto: l.querySelector('.dev-condicion').value,
+      });
+    }
+  });
+  if (errorMax) return toast(errorMax, true);
+  if (!items.length) return toast('Indica al menos 1 producto', true);
+  const r = await apiFetch(`/ventas/${devVentaActual}/devolucion`, {
+    method: 'POST',
+    body: JSON.stringify({ motivo, items }),
+  });
+  const data = await r.json();
+  if (!r.ok) return toast(data.error || 'Error', true);
+  toast(`Devolución #${data.id_devolucion} registrada ✓`);
+  cerrarModal('modal-devolucion');
+  refrescar();
+}
+
+// ---------- KARDEX ----------
+async function verKardex(id_producto) {
+  const r = await apiFetch(`/productos/${id_producto}/kardex`);
+  if (!r.ok) return toast('Error al cargar kardex', true);
+  const { producto, movimientos } = await r.json();
+
+  document.getElementById('kardex-titulo').textContent = `📋 Kardex — ${producto.referencia}`;
+  document.getElementById('kardex-producto').innerHTML = `
+    <strong>${producto.nombre}</strong><br>
+    Stock actual: <strong>${Number(producto.stock).toFixed(0)} und</strong> · ${producto.categoria}${producto.marca ? ' · ' + producto.marca : ''}
+  `;
+
+  const cont = document.getElementById('kardex-tabla');
+  if (!movimientos.length) {
+    cont.innerHTML = emptyState('📋', 'Sin movimientos');
+  } else {
+    cont.innerHTML = `<table>
+      <thead><tr>
+        <th>#</th><th>Fecha</th><th>Tipo</th><th>Condición</th>
+        <th style="text-align:right;">Cantidad</th>
+        <th>Origen</th><th>Motivo</th><th>Usuario</th>
+      </tr></thead><tbody>${movimientos.map(m => {
+        const color = m.tipo_movimiento === 'ENTRADA' ? 'var(--success)' : 'var(--danger)';
+        const signo = m.tipo_movimiento === 'ENTRADA' ? '+' : '−';
+        const condBadge =
+          m.condicion_stock === 'BUENO'           ? '<span class="badge ok">✓ Bueno</span>' :
+          m.condicion_stock === 'DEFECTUOSO'      ? '<span class="badge cero">✗ Defect.</span>' :
+          m.condicion_stock === 'REACONDICIONADO' ? '<span class="badge bajo">↻ Reac.</span>' :
+                                                    '<span class="badge neutral">—</span>';
+        return `<tr>
+          <td class="mono">${m.id_movimiento}</td>
+          <td class="mono" style="font-size:11.5px;">${String(m.fecha_hora).slice(0,16)}</td>
+          <td><span class="badge" style="background:${color}22;color:${color};">${m.tipo_movimiento}</span></td>
+          <td>${condBadge}</td>
+          <td style="text-align:right;font-weight:800;color:${color};" class="mono">${signo}${Number(m.cantidad_base).toFixed(0)}</td>
+          <td class="mono" style="font-size:11.5px;">${m.origen}</td>
+          <td>${m.motivo || '—'}</td>
+          <td>${m.registrado_por}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }
+
+  abrirModal('modal-kardex');
+}
+
+// ---------- INIT ----------
+document.getElementById('login-password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') hacerLogin();
+});
+document.getElementById('login-usuario').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('login-password').focus();
+});
+
+actualizarIconoTema();
+
+(async () => {
+  const t = getToken();
+  if (!t) return mostrarLogin();
+  try {
+    const r = await apiFetch('/auth/me');
+    if (r.ok) { mostrarApp(); }
+    else       { mostrarLogin(); }
+  } catch { mostrarLogin(); }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# Dependencias
+node_modules/
+backend/node_modules/
+
+# Variables de entorno
+.env
+*.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+!.vscode/extensions.json
+
+# Build outputs
+dist/
+build/
+
+# Base de datos local
+*.sql.backup
+backup*.sql
