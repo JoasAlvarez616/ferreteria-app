@@ -906,6 +906,106 @@ tr.clickable:hover td span { color: inherit !important; }
 }
 .sidebar-overlay.active { display: block; opacity: 1; }
 
+/* ============ IMPORTAR PRODUCTOS ============ */
+.import-tabs {
+  display: flex; gap: 0; margin-bottom: 20px;
+  border-bottom: 2px solid var(--ink);
+}
+.import-tab {
+  flex: 1; padding: 12px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--steel);
+  cursor: pointer;
+  transition: all .15s;
+}
+.import-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+.import-panel { display: none; }
+.import-panel.active { display: block; animation: slideFade .2s ease; }
+
+.drop-zone {
+  border: 2.5px dashed var(--ink);
+  border-radius: var(--radius-sm);
+  padding: 34px 20px;
+  text-align: center;
+  background: var(--cream);
+  cursor: pointer;
+  transition: all .15s;
+}
+.drop-zone:hover, .drop-zone.dragover {
+  background: var(--paper-alt);
+  border-color: var(--accent);
+}
+.drop-zone input[type="file"] { display: none; }
+.drop-zone-icon { font-size: 40px; margin-bottom: 10px; display: block; opacity: .6; }
+.drop-zone-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 700;
+  color: var(--ink);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.drop-zone-hint {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; color: var(--steel);
+  margin-top: 6px; letter-spacing: .5px;
+}
+
+#import-json {
+  width: 100%; min-height: 180px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  padding: 12px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--cream);
+  color: var(--ink);
+  resize: vertical;
+}
+
+.import-preview {
+  margin-top: 16px;
+  max-height: 200px;
+  overflow: auto;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+.import-preview table { font-size: 11.5px; }
+.import-preview th { padding: 8px 10px; font-size: 9.5px; }
+.import-preview td { padding: 7px 10px; }
+
+.import-status {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.import-status.ok { background: rgba(21,128,61,.1); border-left: 4px solid var(--success); color: var(--success); }
+.import-status.err { background: rgba(185,28,28,.1); border-left: 4px solid var(--danger); color: var(--danger); }
+.import-status strong { font-weight: 800; }
+
+.import-errores {
+  max-height: 160px; overflow: auto;
+  margin-top: 10px;
+  font-size: 11px;
+  background: rgba(0,0,0,.04);
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+.import-errores div { padding: 3px 0; border-bottom: 1px dashed var(--line-soft); }
+.import-errores div:last-child { border: none; }
+
 /* ============================================================
    RESPONSIVE
    ============================================================ */
@@ -1225,6 +1325,7 @@ html, body { overflow-x: hidden; max-width: 100vw; }
         <button class="btn ghost" onclick="exportarExcelCompleto()" title="Exportar todo a Excel">
           📊 <span>Excel</span>
         </button>
+        <button class="btn ghost" onclick="abrirModalImportar()" title="Importar productos">📥 <span>Importar</span></button>
         <button class="btn ghost" onclick="abrirModalProducto()">＋ <span>Producto</span></button>
         <button class="btn" onclick="abrirModalVenta()">🛒 <span>Venta</span></button>
         <div class="user-pill">
@@ -1470,6 +1571,77 @@ html, body { overflow-x: hidden; max-width: 100vw; }
     <div id="kardex-tabla"></div>
     <div class="actions">
       <button class="btn ghost" onclick="cerrarModal('modal-kardex')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!--MODAL - Importar productos (JSON o Excel)-->
+<div class="modal-bg" id="modal-importar">
+  <div class="modal" style="max-width: 720px;">
+    <h3>📥 Importar productos</h3>
+
+    <div class="import-tabs">
+      <button class="import-tab active" data-import="excel" onclick="switchImportTab('excel')">
+        📊 Excel / CSV
+      </button>
+      <button class="import-tab" data-import="json" onclick="switchImportTab('json')">
+        {} Pegar JSON
+      </button>
+    </div>
+
+    <!-- Panel Excel -->
+    <div class="import-panel active" id="import-panel-excel">
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button class="btn ghost sm" onclick="descargarPlantilla()">⬇ Descargar plantilla</button>
+        <button class="btn ghost sm" onclick="mostrarAyudaImport()">? Ver columnas</button>
+      </div>
+
+      <label class="drop-zone" for="import-file">
+        <input type="file" id="import-file" accept=".xlsx,.xls,.csv" onchange="procesarArchivo(this)">
+        <span class="drop-zone-icon">📄</span>
+        <div class="drop-zone-text">Arrastra tu archivo o haz clic</div>
+        <div class="drop-zone-hint">.xlsx · .xls · .csv</div>
+      </label>
+    </div>
+
+    <!-- Panel JSON -->
+    <div class="import-panel" id="import-panel-json">
+      <label style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--ink);display:block;margin-bottom:6px;">
+        Pega el array de productos
+      </label>
+      <textarea id="import-json" placeholder='[
+  {
+    "referencia": "MART-001",
+    "nombre": "Martillo 16 oz",
+    "categoria": "Herramientas manuales",
+    "marca": "Truper",
+    "unidad": "und",
+    "presentacion": "Unidad",
+    "cantidad_base": 1,
+    "descripcion": "Mango de madera"
+  }
+]'></textarea>
+      <button class="btn ghost sm" onclick="procesarJSON()" style="margin-top:10px;">
+        ✓ Validar y previsualizar
+      </button>
+    </div>
+
+    <!-- Preview -->
+    <div id="import-preview-container" style="display:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:1.2px;color:var(--ink);margin:18px 0 8px;">
+        Previsualización (<span id="import-count">0</span> productos)
+      </div>
+      <div class="import-preview" id="import-preview"></div>
+    </div>
+
+    <!-- Status -->
+    <div id="import-status-container"></div>
+
+    <div class="actions">
+      <button class="btn ghost" onclick="cerrarModalImportar()">Cancelar</button>
+      <button class="btn" id="btn-import-confirmar" onclick="confirmarImportacion()" disabled>
+        Importar
+      </button>
     </div>
   </div>
 </div>
@@ -1853,6 +2025,261 @@ async function guardarProducto() {
   cerrarModal('modal-producto');
   ['p-referencia','p-nombre'].forEach(id => document.getElementById(id).value = '');
   refrescar();
+}
+
+// ============================================================
+// IMPORTAR PRODUCTOS
+// ============================================================
+let importItems = [];
+
+function abrirModalImportar() {
+  importItems = [];
+  document.getElementById('import-file').value = '';
+  document.getElementById('import-json').value = '';
+  document.getElementById('import-preview-container').style.display = 'none';
+  document.getElementById('import-status-container').innerHTML = '';
+  document.getElementById('btn-import-confirmar').disabled = true;
+  switchImportTab('excel');
+  abrirModal('modal-importar');
+}
+
+function cerrarModalImportar() {
+  cerrarModal('modal-importar');
+}
+
+function switchImportTab(tab) {
+  document.querySelectorAll('.import-tab').forEach(t => t.classList.toggle('active', t.dataset.import === tab));
+  document.querySelectorAll('.import-panel').forEach(p => p.classList.toggle('active', p.id === `import-panel-${tab}`));
+}
+
+function descargarPlantilla() {
+  const productos = [
+    { referencia: 'MART-001', nombre: 'Martillo 16 oz', categoria: 'Herramientas manuales', marca: 'Truper', unidad: 'und', presentacion: 'Unidad', cantidad_base: 1, descripcion: 'Mango de madera' },
+    { referencia: 'MART-002', nombre: 'Martillo de bola 24 oz', categoria: 'Herramientas manuales', marca: 'Stanley', unidad: 'und', presentacion: 'Unidad', cantidad_base: 1, descripcion: 'Cabeza forjada' },
+    { referencia: 'TAL-001', nombre: 'Taladro percutor 650W', categoria: 'Herramientas eléctricas', marca: 'Bosch', unidad: 'und', presentacion: 'Unidad', cantidad_base: 1, descripcion: 'Incluye maletín' },
+    { referencia: 'CEM-001', nombre: 'Cemento gris 50kg', categoria: 'Construcción', marca: 'Sika', unidad: 'kg', presentacion: 'Bulto 50kg', cantidad_base: 50, descripcion: '' }
+  ];
+
+  const categorias = [
+    { nombre: 'Herramientas manuales' },
+    { nombre: 'Herramientas eléctricas' },
+    { nombre: 'Plomería' },
+    { nombre: 'Electricidad' },
+    { nombre: 'Pinturas' },
+    { nombre: 'Construcción' },
+    { nombre: 'Jardinería' },
+    { nombre: 'Seguridad industrial' }
+  ];
+
+  const unidades = [
+    { abreviatura: 'und', nombre: 'Unidad' },
+    { abreviatura: 'kg',  nombre: 'Kilogramo' },
+    { abreviatura: 'g',   nombre: 'Gramo' },
+    { abreviatura: 'm',   nombre: 'Metro' },
+    { abreviatura: 'cm',  nombre: 'Centímetro' },
+    { abreviatura: 'mm',  nombre: 'Milímetro' },
+    { abreviatura: 'lt',  nombre: 'Litro' },
+    { abreviatura: 'gal', nombre: 'Galón' },
+    { abreviatura: 'cja', nombre: 'Caja' },
+    { abreviatura: 'bol', nombre: 'Bolsa' }
+  ];
+
+  const marcas = [
+    { nombre: 'Truper' }, { nombre: 'Stanley' }, { nombre: 'Bosch' },
+    { nombre: 'Makita' }, { nombre: 'Pretul' }, { nombre: 'Sika' },
+    { nombre: 'Pintuco' }, { nombre: 'Genérico' }
+  ];
+
+  const wb = XLSX.utils.book_new();
+
+  const wsProd = XLSX.utils.json_to_sheet(productos);
+  wsProd['!cols'] = [
+    { wch: 14 }, { wch: 30 }, { wch: 25 }, { wch: 15 },
+    { wch: 10 }, { wch: 16 }, { wch: 14 }, { wch: 40 }
+  ];
+  XLSX.utils.book_append_sheet(wb, wsProd, 'Productos');
+
+  const wsCat = XLSX.utils.json_to_sheet(categorias);
+  XLSX.utils.book_append_sheet(wb, wsCat, 'Categorías');
+
+  const wsMar = XLSX.utils.json_to_sheet(marcas);
+  XLSX.utils.book_append_sheet(wb, wsMar, 'Marcas');
+
+  const wsUnd = XLSX.utils.json_to_sheet(unidades);
+  XLSX.utils.book_append_sheet(wb, wsUnd, 'Unidades');
+
+  XLSX.writeFile(wb, 'plantilla_productos.xlsx');
+  toast('Plantilla descargada ✓');
+}
+
+function mostrarAyudaImport() {
+  alert(`COLUMNAS DE LA PLANTILLA
+
+· referencia      (obligatoria, única)    ej: MART-001
+· nombre          (obligatorio)           ej: Martillo 16 oz
+· categoria       (obligatoria)           ej: Herramientas manuales
+· marca           (opcional)              ej: Truper
+· unidad          (opcional, default und) ej: und, kg, lt, m
+· presentacion    (opcional, default Unidad)
+· cantidad_base   (opcional, default 1)   ej: 12 (si la presentación es caja x12)
+· descripcion     (opcional)
+
+NOTAS:
+· Las categorías y marcas que no existan se crean automáticamente.
+· La "unidad" debe existir (usa la hoja "Unidades" de la plantilla).
+· Si una referencia ya existe, esa fila se omite y se reporta como error.`);
+}
+
+async function procesarArchivo(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  try {
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+    if (!rows.length) {
+      return toast('El archivo está vacío', true);
+    }
+
+    // Normalizar claves (por si usan "Referencia" en vez de "referencia")
+    const items = rows.map(r => {
+      const norm = {};
+      Object.entries(r).forEach(([k, v]) => {
+        norm[String(k).toLowerCase().trim()] = v;
+      });
+      return {
+        referencia:     String(norm.referencia || '').trim(),
+        nombre:         String(norm.nombre || '').trim(),
+        categoria:      String(norm.categoria || norm['categoría'] || '').trim(),
+        marca:          String(norm.marca || '').trim(),
+        unidad:         String(norm.unidad || '').trim(),
+        presentacion:   String(norm.presentacion || norm['presentación'] || '').trim() || 'Unidad',
+        cantidad_base:  Number(norm.cantidad_base || norm['cantidad base'] || 1),
+        descripcion:    String(norm.descripcion || norm['descripción'] || '').trim(),
+      };
+    }).filter(i => i.referencia || i.nombre);
+
+    if (!items.length) {
+      return toast('No se encontraron filas válidas', true);
+    }
+
+    mostrarPreview(items);
+  } catch (e) {
+    toast('Error al leer el archivo: ' + e.message, true);
+  }
+}
+
+function procesarJSON() {
+  const raw = document.getElementById('import-json').value.trim();
+  if (!raw) return toast('Pega el JSON primero', true);
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error('Debe ser un array');
+
+    const items = parsed.map(it => ({
+      referencia:    String(it.referencia || '').trim(),
+      nombre:        String(it.nombre || '').trim(),
+      categoria:     String(it.categoria || '').trim(),
+      marca:         String(it.marca || '').trim(),
+      unidad:        String(it.unidad || '').trim(),
+      presentacion:  String(it.presentacion || '').trim() || 'Unidad',
+      cantidad_base: Number(it.cantidad_base || 1),
+      descripcion:   String(it.descripcion || '').trim(),
+    })).filter(i => i.referencia || i.nombre);
+
+    if (!items.length) return toast('No hay filas válidas', true);
+    mostrarPreview(items);
+  } catch (e) {
+    toast('JSON inválido: ' + e.message, true);
+  }
+}
+
+function mostrarPreview(items) {
+  importItems = items;
+
+  document.getElementById('import-count').textContent = items.length;
+
+  const preview = items.slice(0, 8);
+  const cols = ['referencia', 'nombre', 'categoria', 'marca', 'unidad', 'cantidad_base'];
+
+  document.getElementById('import-preview').innerHTML = `
+    <table>
+      <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+      <tbody>${preview.map(it => `
+        <tr>${cols.map(c => `<td>${it[c] ?? '—'}</td>`).join('')}</tr>
+      `).join('')}</tbody>
+    </table>
+    ${items.length > 8 ? `<div style="padding:8px 12px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--steel);text-align:center;border-top:1px dashed var(--line-soft);">… y ${items.length - 8} más</div>` : ''}
+  `;
+
+  document.getElementById('import-preview-container').style.display = 'block';
+  document.getElementById('import-status-container').innerHTML = '';
+  document.getElementById('btn-import-confirmar').disabled = false;
+}
+
+async function confirmarImportacion() {
+  if (!importItems.length) return;
+
+  const btn = document.getElementById('btn-import-confirmar');
+  btn.disabled = true;
+  btn.textContent = 'Importando...';
+
+  try {
+    const r = await apiFetch('/productos/importar', {
+      method: 'POST',
+      body: JSON.stringify({ items: importItems }),
+    });
+    const data = await r.json();
+
+    if (!r.ok) {
+      document.getElementById('import-status-container').innerHTML =
+        `<div class="import-status err">Error: ${data.error || 'desconocido'}</div>`;
+      btn.disabled = false;
+      btn.textContent = 'Importar';
+      return;
+    }
+
+    let html = `<div class="import-status ok">
+      <strong>✓ Importación completada</strong><br>
+      Creados: <strong>${data.creados}</strong> · Errores: <strong>${data.errores.length}</strong>`;
+
+    if (data.categorias_creadas.length) {
+      html += `<br>Categorías nuevas: ${data.categorias_creadas.join(', ')}`;
+    }
+    if (data.marcas_creadas.length) {
+      html += `<br>Marcas nuevas: ${data.marcas_creadas.join(', ')}`;
+    }
+
+    if (data.errores.length) {
+      html += `<div class="import-errores">${data.errores.map(e =>
+        `<div><strong>Fila ${e.fila}:</strong> ${e.referencia} — ${e.error}</div>`
+      ).join('')}</div>`;
+    }
+
+    html += `</div>`;
+    document.getElementById('import-status-container').innerHTML = html;
+
+    btn.textContent = 'Cerrar';
+    btn.disabled = false;
+    btn.onclick = () => {
+      cerrarModalImportar();
+      refrescar();
+      btn.textContent = 'Importar';
+      btn.onclick = confirmarImportacion;
+    };
+
+    toast(`✓ ${data.creados} productos importados`);
+    importItems = [];
+  } catch (e) {
+    document.getElementById('import-status-container').innerHTML =
+      `<div class="import-status err">Error: ${e.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = 'Importar';
+  }
 }
 
 // ---------- VENTA ----------

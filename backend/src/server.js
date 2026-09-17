@@ -6,7 +6,7 @@ import { pool } from './db.js';
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // ============================================================
 // JWT minimalista (HMAC-SHA256, sin dependencias externas)
@@ -529,6 +529,119 @@ app.get('/api/reportes/defectuosos', async (_req, res) => {
 
     res.json({ porProducto, porCategoria, devolucionesPorCondicion, kpis: kpis[0] });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ============================================================
+// IMPORTAR PRODUCTOS EN LOTE
+// ============================================================
+app.post('/api/productos/importar', async (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'No hay productos para importar' });
+  }
+
+  const conn = await pool.getConnection();
+  const resultado = { creados: 0, errores: [], categorias_creadas: [], marcas_creadas: [] };
+
+  try {
+    await conn.beginTransaction();
+
+    // Caché de catálogos existentes
+    const [cats]   = await conn.query('SELECT id_categoria, nombre FROM categorias');
+    const [marcas] = await conn.query('SELECT id_marca, nombre FROM marcas');
+    const [unds]   = await conn.query('SELECT id_unidad, abreviatura, nombre FROM unidades_medida');
+
+    const catMap   = {};
+    const marcaMap = {};
+    const uniMap   = {};
+    cats.forEach(c   => catMap[c.nombre.toLowerCase()] = c.id_categoria);
+    marcas.forEach(m => marcaMap[m.nombre.toLowerCase()] = m.id_marca);
+    unds.forEach(u   => {
+      uniMap[u.abreviatura.toLowerCase()] = u.id_unidad;
+      uniMap[u.nombre.toLowerCase()]      = u.id_unidad;
+    });
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const fila = i + 2; // 1 header + 1 index
+
+      try {
+        if (!it.referencia || !it.nombre || !it.categoria) {
+          resultado.errores.push({ fila, referencia: it.referencia || '?', error: 'Faltan referencia, nombre o categoria' });
+          continue;
+        }
+
+        // Categoría: crea si no existe
+        let id_categoria = catMap[String(it.categoria).toLowerCase()];
+        if (!id_categoria) {
+          const [r] = await conn.query('INSERT INTO categorias (nombre) VALUES (?)', [it.categoria]);
+          id_categoria = r.insertId;
+          catMap[String(it.categoria).toLowerCase()] = id_categoria;
+          resultado.categorias_creadas.push(it.categoria);
+        }
+
+        // Marca: opcional, crea si no existe
+        let id_marca = null;
+        if (it.marca && String(it.marca).trim()) {
+          id_marca = marcaMap[String(it.marca).toLowerCase()];
+          if (!id_marca) {
+            const [r] = await conn.query('INSERT INTO marcas (nombre) VALUES (?)', [it.marca]);
+            id_marca = r.insertId;
+            marcaMap[String(it.marca).toLowerCase()] = id_marca;
+            resultado.marcas_creadas.push(it.marca);
+          }
+        }
+
+        // Unidad: por abreviatura o nombre; default 'und'
+        let id_unidad = null;
+        if (it.unidad) {
+          id_unidad = uniMap[String(it.unidad).toLowerCase()];
+        }
+        if (!id_unidad) id_unidad = uniMap['und'];
+        if (!id_unidad) {
+          resultado.errores.push({ fila, referencia: it.referencia, error: 'Unidad no encontrada' });
+          continue;
+        }
+
+        // Insertar producto
+        const [r] = await conn.query(
+          `INSERT INTO productos (referencia, nombre, id_categoria, id_marca, id_unidad_base, descripcion)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [it.referencia, it.nombre, id_categoria, id_marca, id_unidad, it.descripcion || null]
+        );
+        const id_producto = r.insertId;
+
+        // Presentación
+        await conn.query(
+          `INSERT INTO presentaciones (id_producto, nombre, id_unidad, cantidad_base, es_presentacion_base)
+           VALUES (?, ?, ?, ?, TRUE)`,
+          [id_producto, it.presentacion || 'Unidad', id_unidad, Number(it.cantidad_base) || 1]
+        );
+
+        // Inventario inicial
+        await conn.query(
+          'INSERT IGNORE INTO inventario (id_producto, cantidad_actual) VALUES (?, 0)',
+          [id_producto]
+        );
+
+        resultado.creados++;
+      } catch (err) {
+        if (err.code === 'ER_DUP_ENTRY') {
+          resultado.errores.push({ fila, referencia: it.referencia, error: 'Referencia duplicada' });
+        } else {
+          resultado.errores.push({ fila, referencia: it.referencia, error: err.message });
+        }
+      }
+    }
+
+    await conn.commit();
+    res.json({ ok: true, ...resultado });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ error: err.message });
+  } finally {
+    conn.release();
+  }
 });
 
 // ============================================================
