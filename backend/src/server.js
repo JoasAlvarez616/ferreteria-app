@@ -205,9 +205,9 @@ app.get('/api/productos/:id/kardex', async (req, res) => {
 // ============================================================
 app.get('/api/catalogos', async (_req, res) => {
   try {
-    const [categorias] = await pool.query('SELECT id_categoria, nombre FROM categorias WHERE estado="ACTIVO" ORDER BY nombre');
-    const [marcas]     = await pool.query('SELECT id_marca, nombre FROM marcas WHERE estado="ACTIVO" ORDER BY nombre');
-    const [unidades]   = await pool.query('SELECT id_unidad, nombre, abreviatura FROM unidades_medida WHERE estado="ACTIVO" ORDER BY nombre');
+    const [categorias] = await pool.query("SELECT id_categoria, nombre FROM categorias WHERE estado='ACTIVO' ORDER BY nombre");
+    const [marcas]     = await pool.query("SELECT id_marca, nombre FROM marcas WHERE estado='ACTIVO' ORDER BY nombre");
+    const [unidades]   = await pool.query("SELECT id_unidad, nombre, abreviatura FROM unidades_medida WHERE estado='ACTIVO' ORDER BY nombre");
     res.json({ categorias, marcas, unidades });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
