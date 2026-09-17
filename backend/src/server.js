@@ -5,7 +5,7 @@ import 'dotenv/config';
 import { pool } from './db.js';
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json());
 
 // ============================================================
@@ -75,7 +75,7 @@ app.post('/api/auth/login', async (req, res) => {
       id_usuario: user.id_usuario,
       usuario: user.usuario,
       nombre: user.nombre,
-      exp: Date.now() + 1000 * 60 * 60 * 8, // 8 horas
+      exp: Date.now() + 1000 * 60 * 60 * 8,
     };
     const token = signToken(payload);
     res.json({ ok: true, token, user: { id: payload.id_usuario, nombre: user.nombre, usuario: user.usuario } });
@@ -535,6 +535,6 @@ app.get('/api/reportes/defectuosos', async (_req, res) => {
 // START
 // ============================================================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 API en http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 API escuchando en puerto ${PORT}`);
 });
