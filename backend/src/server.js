@@ -645,6 +645,84 @@ app.post('/api/productos/importar', async (req, res) => {
 });
 
 // ============================================================
+// CHAT CON IA (Gemini)
+// ============================================================
+app.post('/api/chat', async (req, res) => {
+  const { mensaje } = req.body;
+  if (!mensaje) return res.status(400).json({ error: 'Falta mensaje' });
+
+  try {
+    const [[kpis]] = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM productos) AS productos,
+        (SELECT COALESCE(SUM(cantidad_actual),0) FROM inventario) AS stock,
+        (SELECT COUNT(*) FROM ventas) AS ventas,
+        (SELECT COALESCE(SUM(total),0) FROM ventas WHERE estado='PAGADA') AS ingresos
+    `);
+    const [stockBajo] = await pool.query(`
+      SELECT p.nombre, i.cantidad_actual
+      FROM productos p
+      JOIN inventario i ON i.id_producto = p.id_producto
+      WHERE i.cantidad_actual < 5
+      ORDER BY i.cantidad_actual ASC LIMIT 5
+    `);
+    const [topVentas] = await pool.query(`
+      SELECT p.nombre, SUM(dv.cantidad_base) AS unidades
+      FROM detalle_venta dv
+      JOIN productos p ON p.id_producto = dv.id_producto
+      JOIN ventas v ON v.id_venta = dv.id_venta
+      WHERE v.estado <> 'ANULADA'
+      GROUP BY p.id_producto
+      ORDER BY unidades DESC LIMIT 3
+    `);
+
+    const contexto = `Eres el asistente virtual de FerreStock, sistema de gestión de ferretería.
+Responde SIEMPRE en español, breve (máximo 3 líneas), útil y amable. No uses markdown.
+
+DATOS REALES DEL NEGOCIO AHORA:
+- Productos en catálogo: ${kpis.productos}
+- Stock total: ${Number(kpis.stock).toFixed(0)} unidades
+- Ventas registradas: ${kpis.ventas}
+- Ingresos cobrados: $${Number(kpis.ingresos).toLocaleString('es-CO')}
+- Productos con stock bajo: ${stockBajo.map(s => `${s.nombre} (${s.cantidad_actual})`).join(', ') || 'ninguno'}
+- Productos más vendidos: ${topVentas.map(t => `${t.nombre} (${t.unidades})`).join(', ') || 'sin datos'}
+
+Pregunta del usuario: ${mensaje}
+
+Respuesta corta y útil:`;
+
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.json({ respuesta: `Ahora mismo tienes ${kpis.productos} productos, ${Number(kpis.stock).toFixed(0)} unidades en stock y $${Number(kpis.ingresos).toLocaleString('es-CO')} en ingresos cobrados.` });
+    }
+
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: contexto }] }],
+          generationConfig: { maxOutputTokens: 200, temperature: 0.7 }
+        })
+      }
+    );
+
+    if (!r.ok) {
+      return res.json({ respuesta: `Tienes ${kpis.productos} productos, ${Number(kpis.stock).toFixed(0)} unidades en stock y $${Number(kpis.ingresos).toLocaleString('es-CO')} en ingresos.` });
+    }
+
+    const data = await r.json();
+    const respuesta = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'No pude procesar tu pregunta. Intenta de nuevo.';
+    res.json({ respuesta });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
 // START
 // ============================================================
 const PORT = process.env.PORT || 3000;

@@ -1543,6 +1543,31 @@ html, body { overflow-x: hidden; max-width: 100vw; }
   </div>
 </div>
 
+<!-- ============ CHAT IA ============ -->
+<button id="chat-toggle" onclick="toggleChat()" title="Asistente IA"
+  style="position:fixed;bottom:24px;right:24px;width:60px;height:60px;border-radius:50%;background:var(--accent);color:var(--paper);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--ink);font-size:26px;z-index:150;cursor:pointer;transition:transform .15s;"
+  onmouseover="this.style.transform='translate(-2px,-2px) rotate(-8deg)'"
+  onmouseout="this.style.transform=''">
+  🤖
+</button>
+
+<div id="chat-panel"
+  style="display:none;position:fixed;bottom:100px;right:24px;width:340px;max-width:calc(100vw - 48px);height:460px;max-height:calc(100vh - 140px);background:var(--paper);border:3px solid var(--ink);border-radius:var(--radius);box-shadow:6px 6px 0 var(--ink);z-index:150;flex-direction:column;overflow:hidden;">
+  <div style="background:var(--ink);color:var(--paper);padding:14px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--accent);flex-shrink:0;">
+    <div style="font-family:'Archivo Black',sans-serif;font-size:13px;text-transform:uppercase;letter-spacing:.5px;">🤖 Asistente IA</div>
+    <button onclick="toggleChat()" style="background:none;border:none;color:var(--paper);font-size:22px;cursor:pointer;padding:0;line-height:1;">×</button>
+  </div>
+  <div id="chat-messages" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;font-size:13px;background:var(--cream);"></div>
+  <div style="padding:10px;border-top:2px solid var(--ink);background:var(--paper);display:flex;gap:6px;flex-shrink:0;">
+    <input id="chat-input" placeholder="Pregúntame algo..." onkeydown="if(event.key==='Enter')enviarChat()"
+      style="flex:1;padding:10px;border:2px solid var(--ink);border-radius:var(--radius-sm);background:var(--cream);color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:12px;min-width:0;">
+    <button onclick="enviarChat()"
+      style="background:var(--accent);color:var(--paper);border:2px solid var(--ink);border-radius:var(--radius-sm);padding:0 14px;font-weight:800;font-size:16px;box-shadow:2px 2px 0 var(--ink);cursor:pointer;">
+      →
+    </button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -2624,6 +2649,52 @@ async function verKardex(id_producto) {
       }).join('')}</tbody></table>`;
   }
   abrirModal('modal-kardex');
+}
+
+// ============================================================
+// CHAT IA
+// ============================================================
+function toggleChat() {
+  const p = document.getElementById('chat-panel');
+  const isOpen = p.style.display === 'flex';
+  p.style.display = isOpen ? 'none' : 'flex';
+  if (!isOpen) {
+    if (!document.getElementById('chat-messages').children.length) {
+      agregarMensajeChat('bot', '¡Hola! Soy el asistente de FerreStock 🤖 Pregúntame sobre productos, ventas, stock o ingresos.');
+    }
+    setTimeout(() => document.getElementById('chat-input').focus(), 100);
+  }
+}
+
+function agregarMensajeChat(rol, texto) {
+  const c = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.style.cssText = rol === 'user'
+    ? 'align-self:flex-end;background:var(--accent);color:var(--paper);padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:85%;font-size:12.5px;font-family:\'JetBrains Mono\',monospace;line-height:1.4;'
+    : 'align-self:flex-start;background:var(--paper);border:2px solid var(--ink);color:var(--ink);padding:8px 12px;border-radius:12px 12px 12px 2px;max-width:85%;font-size:12.5px;line-height:1.4;';
+  div.textContent = texto;
+  c.appendChild(div);
+  c.scrollTop = c.scrollHeight;
+  return div;
+}
+
+async function enviarChat() {
+  const input = document.getElementById('chat-input');
+  const mensaje = input.value.trim();
+  if (!mensaje) return;
+  input.value = '';
+  agregarMensajeChat('user', mensaje);
+  const loader = agregarMensajeChat('bot', '... pensando');
+  try {
+    const r = await apiFetch('/chat', {
+      method: 'POST',
+      body: JSON.stringify({ mensaje })
+    });
+    const data = await r.json();
+    loader.textContent = data.respuesta || 'No pude responder ahora.';
+  } catch (e) {
+    loader.textContent = 'Error de conexión. Intenta de nuevo.';
+  }
 }
 
 document.getElementById('login-password').addEventListener('keydown', e => {
