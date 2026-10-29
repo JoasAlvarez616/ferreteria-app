@@ -1,5 +1,6 @@
 {
-  "name": "ferreteria-frontend",
+  "name": "ferrestock-frontend",
+ 
   "version": "1.0.0",
   "scripts": {
     "start": "serve -s . -l 3000"
