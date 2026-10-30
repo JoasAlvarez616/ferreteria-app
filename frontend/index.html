@@ -2165,7 +2165,7 @@ function agregarLinea() {
   div.className = 'item-line';
   div.innerHTML = `
     <select class="item-producto">${productosCache.map(p =>
-      `<option value="${p.id_producto}">${p.referencia} — ${p.nombre}</option>`).join('')}</select>
+      `<option value="${p.id_producto}" data-presentacion="${p.id_presentacion || ''}">${p.referencia} — ${p.nombre}</option>`).join('')}</select>
     <input type="number" class="item-cantidad" value="1" min="1" step="1">
     <input type="number" class="item-precio" value="45000" min="0" step="100">
     <button class="remove" onclick="this.parentElement.remove(); recalcular();">×</button>
@@ -2193,16 +2193,19 @@ async function guardarVenta() {
   document.querySelectorAll('.item-line').forEach(l => {
     const cant = Number(l.querySelector('.item-cantidad').value) || 0;
     const prec = Number(l.querySelector('.item-precio').value)   || 0;
-    if (cant > 0) {
+    const select = l.querySelector('.item-producto');
+    const idPresentacion = Number(select.options[select.selectedIndex].dataset.presentacion);
+    if (cant > 0 && idPresentacion) {
       items.push({
-        id_producto:     Number(l.querySelector('.item-producto').value),
-        id_presentacion: 1,
+        id_producto:     Number(select.value),
+        id_presentacion: idPresentacion,
         cantidad:        cant,
         precio_unitario: prec,
         iva:             Math.round(cant * prec * 0.19),
       });
     }
-  });
+  });  
+  
   if (!items.length) return toast('Agrega al menos una línea', true);
   const id_cliente = Number(document.getElementById('venta-cliente').value) || null;
   const r = await apiFetch('/ventas', { method: 'POST', body: JSON.stringify({ items, id_cliente }) });

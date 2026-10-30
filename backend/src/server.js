@@ -123,7 +123,8 @@ app.get('/api/productos', async (_req, res) => {
              COALESCE(i.cantidad_actual, 0) AS stock,
              COALESCE(sc_def.cantidad, 0)   AS defectuosos,
              COALESCE(sc_reac.cantidad, 0)  AS reacondicionados,
-             p.id_categoria, p.id_marca, p.id_unidad_base
+             p.id_categoria, p.id_marca, p.id_unidad_base,
+             pr.id_presentacion
       FROM productos p
       JOIN categorias c ON c.id_categoria = p.id_categoria
       LEFT JOIN marcas m ON m.id_marca = p.id_marca
@@ -133,6 +134,8 @@ app.get('/api/productos', async (_req, res) => {
         ON sc_def.id_producto = p.id_producto AND sc_def.condicion = 'DEFECTUOSO'
       LEFT JOIN stock_condicion sc_reac
         ON sc_reac.id_producto = p.id_producto AND sc_reac.condicion = 'REACONDICIONADO'
+      LEFT JOIN presentaciones pr
+        ON pr.id_producto = p.id_producto AND pr.es_presentacion_base = TRUE
       ORDER BY p.id_producto DESC
     `);
     res.json(rows);
