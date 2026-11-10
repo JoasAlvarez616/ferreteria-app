@@ -241,16 +241,27 @@ app.post('/api/ventas', async (req, res) => {
   }
   const conn = await pool.getConnection();
   try {
+    await conn.beginTransaction();
     await conn.query('SET @id_venta = 0');
-    await conn.query('CALL sp_registrar_venta(?, ?, ?, @id_venta)',
-      [id_usuario, id_cliente || null, JSON.stringify(items)]);
+    await conn.query('CALL sp_registrar_venta(?, ?, CAST(? AS JSON), @id_venta)',
+  [id_usuario, id_cliente || null, JSON.stringify(items)]);
     const [[{ id_venta }]] = await conn.query('SELECT @id_venta AS id_venta');
+
+    // Venta de contado (sin cliente) → pago completo automático
+    if (!id_cliente) {
+      const [[v]] = await conn.query('SELECT total FROM ventas WHERE id_venta = ?', [id_venta]);
+      await conn.query('CALL sp_registrar_pago(?, ?, ?, ?, ?)',
+        [id_venta, v.total, 'EFECTIVO', 'Pago automático contado', id_usuario]);
+    }
+
     const [[venta]] = await conn.query(
       'SELECT id_venta, subtotal, iva, total, estado FROM ventas WHERE id_venta = ?',
       [id_venta]
     );
+    await conn.commit();
     res.status(201).json({ ok: true, venta });
   } catch (err) {
+    await conn.rollback();
     res.status(500).json({ error: err.message });
   } finally { conn.release(); }
 });
