@@ -1384,10 +1384,17 @@ html, body { overflow-x: hidden; max-width: 100vw; }
 
 <div class="modal-bg" id="modal-venta">
   <div class="modal" style="max-width: 660px;">
+    <div class="modal-bg" id="modal-venta">
+  <div class="modal" style="max-width: 660px;">
     <h3>🛒 Nueva venta</h3>
     <label>Cliente (opcional)</label>
     <select id="venta-cliente">
-      <option value="">Consumidor final (contado)</option>
+      <option value="">Consumidor final</option>
+    </select>
+    <label style="margin-top: 12px;">Forma de pago</label>
+    <select id="venta-forma-pago">
+      <option value="CONTADO">💵 Contado (paga ahora)</option>
+      <option value="CREDITO">📝 Crédito (queda pendiente)</option>
     </select>
     <label style="margin-top: 20px;">Productos</label>
     <div id="items-container"></div>
@@ -2211,7 +2218,12 @@ async function guardarVenta() {
   if (!items.length) return toast('Agrega al menos una línea', true);
 
   const id_cliente = Number(document.getElementById('venta-cliente').value) || null;
-  const r = await apiFetch('/ventas', { method: 'POST', body: JSON.stringify({ items, id_cliente }) });
+  const forma_pago = document.getElementById('venta-forma-pago').value;
+
+  const r = await apiFetch('/ventas', {
+    method: 'POST',
+    body: JSON.stringify({ items, id_cliente, forma_pago })
+  });
   const data = await r.json();
   if (!r.ok) return toast(data.error || 'Error', true);
   toast(`Venta #${data.venta.id_venta} registrada ✓`);
