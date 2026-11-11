@@ -1384,8 +1384,6 @@ html, body { overflow-x: hidden; max-width: 100vw; }
 
 <div class="modal-bg" id="modal-venta">
   <div class="modal" style="max-width: 660px;">
-    <div class="modal-bg" id="modal-venta">
-  <div class="modal" style="max-width: 660px;">
     <h3>🛒 Nueva venta</h3>
     <label>Cliente (opcional)</label>
     <select id="venta-cliente">
@@ -1872,11 +1870,16 @@ async function exportarTabla(tipo) {
 }
 
 async function cargarKPIs() {
-  const d = await (await apiFetch('/kpis')).json();
-  animarNumero(document.getElementById('kpi-productos'), Number(d.total_productos));
-  animarNumero(document.getElementById('kpi-stock'),     Number(d.total_stock));
-  animarNumero(document.getElementById('kpi-ventas'),    Number(d.total_ventas));
-  animarNumero(document.getElementById('kpi-ingresos'),  Number(d.total_ingresos), true);
+  try {
+    const d = await (await apiFetch('/kpis')).json();
+    animarNumero(document.getElementById('kpi-productos'), Number(d.total_productos));
+    animarNumero(document.getElementById('kpi-stock'),     Number(d.total_stock));
+    animarNumero(document.getElementById('kpi-ventas'),    Number(d.total_ventas));
+    animarNumero(document.getElementById('kpi-ingresos'),  Number(d.total_ingresos), true);
+  } catch (e) {
+    console.warn('Error cargando KPIs:', e.message);
+    throw e;  // ⬅ relanza el error para que refrescar lo detecte
+  }
 }
 
 async function cargarProductos() {
@@ -1918,15 +1921,24 @@ async function cargarVentas() {
     <td style="text-align:right;" class="mono"><strong>${fmt(v.total)}</strong></td>
     <td>${v.estado}</td>
     <td style="display:flex;gap:6px;">
-      ${v.estado !== 'ANULADA' && v.estado !== 'PAGADA' ?
-        `<button class="btn ghost sm" onclick="abrirModalCredito(${v.id_venta})">Crédito</button>` : ''}
+      ${v.estado !== 'ANULADA' && v.estado !== 'PAGADA' && v.estado !== 'CREDITO' ?
+  `<button class="btn ghost sm" onclick="abrirModalCredito(${v.id_venta})">Crédito</button>` : ''}
       ${v.estado !== 'ANULADA' ?
         `<button class="btn ghost sm" onclick="abrirModalDevolucion(${v.id_venta})">Devolver</button>` : ''}
     </td>
   </tr>`).join('')}</tbody></table>`;
 }
 
-function refrescar() { cargarKPIs(); cargarProductos(); cargarVentas(); }
+function refrescar() {
+  Promise.allSettled([
+    cargarKPIs(),
+    cargarProductos(),
+    cargarVentas()
+  ]).then(results => {
+    const fallos = results.filter(r => r.status === 'rejected').length;
+    if (fallos > 0) toast(`${fallos} peticiones fallaron. Revisa tu conexión.`, true);
+  });
+}
 
 async function abrirModalProducto() {
   const c = await (await apiFetch('/catalogos')).json();
@@ -2159,9 +2171,11 @@ async function abrirModalVenta() {
   try {
     const clientes = await (await apiFetch('/clientes')).json();
     const sel = document.getElementById('venta-cliente');
-    sel.innerHTML = '<option value="">Consumidor final (contado)</option>' +
+    sel.innerHTML = '<option value="">Consumidor final</option>' +
       clientes.map(c => `<option value="${c.id_cliente}">${c.nombre}</option>`).join('');
+    sel.value = '';
   } catch {}
+  document.getElementById('venta-forma-pago').value = 'CONTADO';
   document.getElementById('items-container').innerHTML = '';
   agregarLinea();
   abrirModal('modal-venta');
