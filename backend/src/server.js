@@ -4,10 +4,20 @@ import crypto from 'crypto';
 import 'dotenv/config';
 import { pool } from './db.js';
 import bcrypt from 'bcrypt';
+import rateLimit from 'express-rate-limit';
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json({ limit: '10mb' }));
+// Rate limiting en login (5 intentos por IP cada 15 min)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { error: 'Demasiados intentos fallidos. Espera 15 minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ============================================================
 // JWT minimalista (HMAC-SHA256, sin dependencias externas)
@@ -54,7 +64,7 @@ app.use('/api', (req, res, next) => {
 // ============================================================
 // AUTH
 // ============================================================
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const { usuario, password } = req.body;
   if (!usuario || !password) {
     return res.status(400).json({ error: 'usuario y password son obligatorios' });
