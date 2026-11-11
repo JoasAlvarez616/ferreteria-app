@@ -3,6 +3,7 @@ import cors from 'cors';
 import crypto from 'crypto';
 import 'dotenv/config';
 import { pool } from './db.js';
+import bcrypt from 'bcrypt';
 
 const app = express();
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
@@ -66,8 +67,9 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
     if (user.estado !== 'ACTIVO') return res.status(403).json({ error: 'Usuario inactivo' });
 
-    // Comparación en texto plano (temporal, migrar a bcrypt después)
-    if (user.password_hash !== password) {
+    // Comparar con bcrypt
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) {
       return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 

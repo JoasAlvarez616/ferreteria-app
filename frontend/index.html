@@ -1883,50 +1883,60 @@ async function cargarKPIs() {
 }
 
 async function cargarProductos() {
-  const data = await (await apiFetch('/productos')).json();
-  productosCache = data;
-  const c = document.getElementById('tabla-productos');
-  if (!data.length) return c.innerHTML = emptyState('📦', 'Sin productos');
-  c.innerHTML = `<table><thead><tr>
-    <th>Referencia</th><th>Producto</th><th>Categoría</th><th>Marca</th>
-    <th style="text-align:right;">Vendible</th>
-    <th style="text-align:right;">Def.</th>
-    <th style="text-align:right;">Reac.</th>
-    <th>Estado</th>
-  </tr></thead><tbody>${data.map(p => `<tr class="clickable" onclick="verKardex(${p.id_producto})">
-    <td><strong>${p.referencia}</strong></td>
-    <td>${p.nombre}</td>
-    <td><span class="cat-dot" style="background:${colorCategoria(p.id_categoria)}"></span>${p.categoria}</td>
-    <td>${p.marca ?? '—'}</td>
-    <td style="text-align:right;" class="mono"><strong>${Number(p.stock).toFixed(0)}</strong></td>
-    <td style="text-align:right;" class="mono">${Number(p.defectuosos || 0) > 0 ? `<span style="color:var(--danger);font-weight:700;">${Number(p.defectuosos).toFixed(0)}</span>` : '—'}</td>
-    <td style="text-align:right;" class="mono">${Number(p.reacondicionados || 0) > 0 ? `<span style="color:var(--warning);font-weight:700;">${Number(p.reacondicionados).toFixed(0)}</span>` : '—'}</td>
-    <td>${badge(Number(p.stock), colorCategoria(p.id_categoria))}</td>
-  </tr>`).join('')}</tbody></table>`;
+  try {
+    const data = await (await apiFetch('/productos')).json();
+    productosCache = data;
+    const c = document.getElementById('tabla-productos');
+    if (!data.length) return c.innerHTML = emptyState('📦', 'Sin productos');
+    c.innerHTML = `<table><thead><tr>
+      <th>Referencia</th><th>Producto</th><th>Categoría</th><th>Marca</th>
+      <th style="text-align:right;">Vendible</th>
+      <th style="text-align:right;">Def.</th>
+      <th style="text-align:right;">Reac.</th>
+      <th>Estado</th>
+    </tr></thead><tbody>${data.map(p => `<tr class="clickable" onclick="verKardex(${p.id_producto})">
+      <td><strong>${p.referencia}</strong></td>
+      <td>${p.nombre}</td>
+      <td><span class="cat-dot" style="background:${colorCategoria(p.id_categoria)}"></span>${p.categoria}</td>
+      <td>${p.marca ?? '—'}</td>
+      <td style="text-align:right;" class="mono"><strong>${Number(p.stock).toFixed(0)}</strong></td>
+      <td style="text-align:right;" class="mono">${Number(p.defectuosos || 0) > 0 ? `<span style="color:var(--danger);font-weight:700;">${Number(p.defectuosos).toFixed(0)}</span>` : '—'}</td>
+      <td style="text-align:right;" class="mono">${Number(p.reacondicionados || 0) > 0 ? `<span style="color:var(--warning);font-weight:700;">${Number(p.reacondicionados).toFixed(0)}</span>` : '—'}</td>
+      <td>${badge(Number(p.stock), colorCategoria(p.id_categoria))}</td>
+    </tr>`).join('')}</tbody></table>`;
+  } catch (e) {
+    console.warn('Error cargando productos:', e.message);
+    throw e;
+  }
 }
 
 async function cargarVentas() {
-  const data = await (await apiFetch('/ventas')).json();
-  ventasCache = data;
-  const c = document.getElementById('tabla-ventas');
-  if (!data.length) return c.innerHTML = emptyState('💰', 'Sin ventas');
-  c.innerHTML = `<table><thead><tr>
-    <th>#</th><th>Fecha</th><th>Cliente</th><th>Vendedor</th>
-    <th style="text-align:right;">Total</th><th>Estado</th><th></th>
-  </tr></thead><tbody>${data.map(v => `<tr>
-    <td class="mono">#${v.id_venta}</td>
-    <td class="mono" style="font-size:11.5px;">${String(v.fecha_hora).slice(0,16)}</td>
-    <td>${v.cliente}</td>
-    <td>${v.vendedor}</td>
-    <td style="text-align:right;" class="mono"><strong>${fmt(v.total)}</strong></td>
-    <td>${v.estado}</td>
-    <td style="display:flex;gap:6px;">
-      ${v.estado !== 'ANULADA' && v.estado !== 'PAGADA' && v.estado !== 'CREDITO' ?
-  `<button class="btn ghost sm" onclick="abrirModalCredito(${v.id_venta})">Crédito</button>` : ''}
-      ${v.estado !== 'ANULADA' ?
-        `<button class="btn ghost sm" onclick="abrirModalDevolucion(${v.id_venta})">Devolver</button>` : ''}
-    </td>
-  </tr>`).join('')}</tbody></table>`;
+  try {
+    const data = await (await apiFetch('/ventas')).json();
+    ventasCache = data;
+    const c = document.getElementById('tabla-ventas');
+    if (!data.length) return c.innerHTML = emptyState('💰', 'Sin ventas');
+    c.innerHTML = `<table><thead><tr>
+      <th>#</th><th>Fecha</th><th>Cliente</th><th>Vendedor</th>
+      <th style="text-align:right;">Total</th><th>Estado</th><th></th>
+    </tr></thead><tbody>${data.map(v => `<tr>
+      <td class="mono">#${v.id_venta}</td>
+      <td class="mono" style="font-size:11.5px;">${String(v.fecha_hora).slice(0,16)}</td>
+      <td>${v.cliente}</td>
+      <td>${v.vendedor}</td>
+      <td style="text-align:right;" class="mono"><strong>${fmt(v.total)}</strong></td>
+      <td>${v.estado}</td>
+      <td style="display:flex;gap:6px;">
+        ${v.estado !== 'ANULADA' && v.estado !== 'PAGADA' && v.estado !== 'CREDITO' ?
+          `<button class="btn ghost sm" onclick="abrirModalCredito(${v.id_venta})">Crédito</button>` : ''}
+        ${v.estado !== 'ANULADA' ?
+          `<button class="btn ghost sm" onclick="abrirModalDevolucion(${v.id_venta})">Devolver</button>` : ''}
+      </td>
+    </tr>`).join('')}</tbody></table>`;
+  } catch (e) {
+    console.warn('Error cargando ventas:', e.message);
+    throw e;
+  }
 }
 
 function refrescar() {
