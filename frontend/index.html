@@ -1266,12 +1266,38 @@ html, body { overflow-x: hidden; max-width: 100vw; }
         </div>
 
         <div class="section">
-          <div class="section-header">
-            <div class="section-title">Catálogo de productos</div>
-            <button class="btn ghost sm" onclick="exportarTabla('productos')">📊 Exportar</button>
-          </div>
-          <div class="table-wrap" id="tabla-productos"></div>
-        </div>
+  <div class="section-header">
+    <div class="section-title">Catálogo de productos</div>
+    <button class="btn ghost sm" onclick="exportarTabla('productos')">📊 Exportar</button>
+  </div>
+  <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;">
+    <input
+      type="text"
+      id="buscar-producto"
+      placeholder="🔍 Buscar por referencia, nombre, categoría o marca..."
+      oninput="filtrarProductos()"
+      style="flex:1;min-width:220px;padding:10px 14px;border:2px solid var(--ink);border-radius:var(--radius-sm);background:var(--cream);color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:13px;"
+    >
+    <select
+      id="filtro-stock"
+      onchange="filtrarProductos()"
+      style="padding:10px 14px;border:2px solid var(--ink);border-radius:var(--radius-sm);background:var(--cream);color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:13px;"
+    >
+      <option value="">Todos</option>
+      <option value="ok">Stock OK</option>
+      <option value="bajo">Stock bajo</option>
+      <option value="cero">Sin stock</option>
+    </select>
+    <select
+      id="filtro-categoria"
+      onchange="filtrarProductos()"
+      style="padding:10px 14px;border:2px solid var(--ink);border-radius:var(--radius-sm);background:var(--cream);color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:13px;"
+    >
+      <option value="">Todas las categorías</option>
+    </select>
+  </div>
+  <div class="table-wrap" id="tabla-productos"></div>
+</div>
 
         <div class="section">
           <div class="section-header">
@@ -1886,28 +1912,80 @@ async function cargarProductos() {
   try {
     const data = await (await apiFetch('/productos')).json();
     productosCache = data;
-    const c = document.getElementById('tabla-productos');
-    if (!data.length) return c.innerHTML = emptyState('📦', 'Sin productos');
-    c.innerHTML = `<table><thead><tr>
-      <th>Referencia</th><th>Producto</th><th>Categoría</th><th>Marca</th>
-      <th style="text-align:right;">Vendible</th>
-      <th style="text-align:right;">Def.</th>
-      <th style="text-align:right;">Reac.</th>
-      <th>Estado</th>
-    </tr></thead><tbody>${data.map(p => `<tr class="clickable" onclick="verKardex(${p.id_producto})">
-      <td><strong>${p.referencia}</strong></td>
-      <td>${p.nombre}</td>
-      <td><span class="cat-dot" style="background:${colorCategoria(p.id_categoria)}"></span>${p.categoria}</td>
-      <td>${p.marca ?? '—'}</td>
-      <td style="text-align:right;" class="mono"><strong>${Number(p.stock).toFixed(0)}</strong></td>
-      <td style="text-align:right;" class="mono">${Number(p.defectuosos || 0) > 0 ? `<span style="color:var(--danger);font-weight:700;">${Number(p.defectuosos).toFixed(0)}</span>` : '—'}</td>
-      <td style="text-align:right;" class="mono">${Number(p.reacondicionados || 0) > 0 ? `<span style="color:var(--warning);font-weight:700;">${Number(p.reacondicionados).toFixed(0)}</span>` : '—'}</td>
-      <td>${badge(Number(p.stock), colorCategoria(p.id_categoria))}</td>
-    </tr>`).join('')}</tbody></table>`;
+    // Llenar el selector de categorías (solo la primera vez)
+    const selCat = document.getElementById('filtro-categoria');
+    if (selCat && selCat.options.length === 1) {
+      const cats = [...new Set(data.map(p => p.categoria))].sort();
+      cats.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        selCat.appendChild(opt);
+      });
+    }
+    filtrarProductos();
   } catch (e) {
     console.warn('Error cargando productos:', e.message);
     throw e;
   }
+}
+
+function filtrarProductos() {
+  const q = (document.getElementById('buscar-producto')?.value || '').toLowerCase().trim();
+  const stockFilter = document.getElementById('filtro-stock')?.value || '';
+  const catFilter = document.getElementById('filtro-categoria')?.value || '';
+
+  let data = productosCache;
+
+  if (q) {
+    data = data.filter(p =>
+      String(p.referencia).toLowerCase().includes(q) ||
+      String(p.nombre).toLowerCase().includes(q) ||
+      String(p.categoria).toLowerCase().includes(q) ||
+      String(p.marca || '').toLowerCase().includes(q)
+    );
+  }
+
+  if (stockFilter) {
+    data = data.filter(p => {
+      const s = Number(p.stock);
+      if (stockFilter === 'ok')   return s >= 5;
+      if (stockFilter === 'bajo') return s > 0 && s < 5;
+      if (stockFilter === 'cero') return s === 0;
+      return true;
+    });
+  }
+
+  if (catFilter) {
+    data = data.filter(p => p.categoria === catFilter);
+  }
+
+  const c = document.getElementById('tabla-productos');
+  if (!data.length) {
+    c.innerHTML = emptyState('🔍',
+      productosCache.length
+        ? 'Sin resultados para tu búsqueda'
+        : 'Sin productos'
+    );
+    return;
+  }
+
+  c.innerHTML = `<table><thead><tr>
+    <th>Referencia</th><th>Producto</th><th>Categoría</th><th>Marca</th>
+    <th style="text-align:right;">Vendible</th>
+    <th style="text-align:right;">Def.</th>
+    <th style="text-align:right;">Reac.</th>
+    <th>Estado</th>
+  </tr></thead><tbody>${data.map(p => `<tr class="clickable" onclick="verKardex(${p.id_producto})">
+    <td><strong>${p.referencia}</strong></td>
+    <td>${p.nombre}</td>
+    <td><span class="cat-dot" style="background:${colorCategoria(p.id_categoria)}"></span>${p.categoria}</td>
+    <td>${p.marca ?? '—'}</td>
+    <td style="text-align:right;" class="mono"><strong>${Number(p.stock).toFixed(0)}</strong></td>
+    <td style="text-align:right;" class="mono">${Number(p.defectuosos || 0) > 0 ? `<span style="color:var(--danger);font-weight:700;">${Number(p.defectuosos).toFixed(0)}</span>` : '—'}</td>
+    <td style="text-align:right;" class="mono">${Number(p.reacondicionados || 0) > 0 ? `<span style="color:var(--warning);font-weight:700;">${Number(p.reacondicionados).toFixed(0)}</span>` : '—'}</td>
+    <td>${badge(Number(p.stock), colorCategoria(p.id_categoria))}</td>
+  </tr>`).join('')}</tbody></table>`;
 }
 
 async function cargarVentas() {
