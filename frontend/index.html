@@ -3007,8 +3007,8 @@ function agregarMensajeChat(rol, texto) {
   const c = document.getElementById('chat-messages');
   const div = document.createElement('div');
   div.style.cssText = rol === 'user'
-    ? 'align-self:flex-end;background:var(--accent);color:var(--paper);padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:85%;font-size:12.5px;font-family:\'JetBrains Mono\',monospace;line-height:1.4;'
-    : 'align-self:flex-start;background:var(--paper);border:2px solid var(--ink);color:var(--ink);padding:8px 12px;border-radius:12px 12px 12px 2px;max-width:85%;font-size:12.5px;line-height:1.4;';
+    ? 'align-self:flex-end;background:var(--accent);color:var(--paper);padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:85%;font-size:12.5px;font-family:\'JetBrains Mono\',monospace;line-height:1.5;white-space:pre-wrap;'
+    : 'align-self:flex-start;background:var(--paper);border:2px solid var(--ink);color:var(--ink);padding:8px 12px;border-radius:12px 12px 12px 2px;max-width:85%;font-size:12.5px;line-height:1.5;white-space:pre-wrap;';
   div.textContent = texto;
   c.appendChild(div);
   c.scrollTop = c.scrollHeight;

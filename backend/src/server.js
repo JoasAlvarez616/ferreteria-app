@@ -805,68 +805,291 @@ app.post('/api/productos/importar', validate(importSchema), async (req, res) => 
 });
 
 // ============================================================
-// CHAT CON IA — FAILOVER (Groq → OpenRouter)
+// CHAT IA CON FUNCTION CALLING (Groq → OpenRouter failover)
 // ============================================================
 app.post('/api/chat', validate(chatSchema), async (req, res) => {
   const { mensaje } = req.body;
 
   try {
-    // 1. Obtener datos reales del negocio para el contexto
-    const [[kpis]] = await pool.query(`
-      SELECT
-        (SELECT COUNT(*) FROM productos) AS productos,
-        (SELECT COALESCE(SUM(cantidad_actual),0) FROM inventario) AS stock,
-        (SELECT COUNT(*) FROM ventas) AS ventas,
-        (SELECT COALESCE(SUM(CASE WHEN tipo='PAGO' THEN monto ELSE -monto END),0) FROM pagos WHERE estado='REGISTRADO') AS ingresos
-    `);
+    // ============================================================
+    // 1. Definir las herramientas (formato OpenAI)
+    // ============================================================
+    const tools = [
+      {
+        type: 'function',
+        function: {
+          name: 'consultar_stock_producto',
+          description: 'Consulta el stock actual de un producto específico por su nombre o referencia.',
+          parameters: {
+            type: 'object',
+            properties: {
+              nombre: { type: 'string', description: 'Nombre o referencia del producto' }
+            },
+            required: ['nombre']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'listar_productos_bajo_stock',
+          description: 'Lista los productos con stock menor a 5 unidades. Útil para saber qué reabastecer.',
+          parameters: { type: 'object', properties: {} }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'listar_productos_por_categoria',
+          description: 'Lista TODOS los productos de una categoría específica (ej: Plomería, Pinturas, Electricidad, Herramientas manuales).',
+          parameters: {
+            type: 'object',
+            properties: {
+              categoria: { type: 'string', description: 'Nombre exacto o parcial de la categoría' }
+            },
+            required: ['categoria']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'ventas_del_dia',
+          description: 'Devuelve el total vendido hoy, cantidad de ventas y monto en pesos.',
+          parameters: { type: 'object', properties: {} }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'top_productos_vendidos',
+          description: 'Devuelve los 5 productos más vendidos de la historia del negocio.',
+          parameters: { type: 'object', properties: {} }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'saldo_cliente',
+          description: 'Consulta el saldo deudor pendiente de un cliente por su nombre.',
+          parameters: {
+            type: 'object',
+            properties: {
+              nombre: { type: 'string', description: 'Nombre del cliente' }
+            },
+            required: ['nombre']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'listar_clientes',
+          description: 'Lista todos los clientes con su límite de crédito y deuda actual.',
+          parameters: { type: 'object', properties: {} }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'ventas_recientes',
+          description: 'Devuelve las últimas 10 ventas realizadas con cliente, total y estado.',
+          parameters: { type: 'object', properties: {} }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'resumen_negocio',
+          description: 'Devuelve KPIs generales: total de productos, stock total, número de ventas e ingresos netos.',
+          parameters: { type: 'object', properties: {} }
+        }
+      }
+    ];
 
-    const [stockBajo] = await pool.query(`
-      SELECT p.nombre, i.cantidad_actual
-      FROM productos p
-      JOIN inventario i ON i.id_producto = p.id_producto
-      WHERE i.cantidad_actual < 5
-      ORDER BY i.cantidad_actual ASC LIMIT 5
-    `);
+    // ============================================================
+    // 2. Ejecutor de herramientas
+    // ============================================================
+    async function ejecutarTool(nombre, args) {
+      switch (nombre) {
 
-    const [topVentas] = await pool.query(`
-      SELECT p.nombre, SUM(dv.cantidad_base) AS unidades
-      FROM detalle_venta dv
-      JOIN productos p ON p.id_producto = dv.id_producto
-      JOIN ventas v ON v.id_venta = dv.id_venta
-      WHERE v.estado <> 'ANULADA'
-      GROUP BY p.id_producto
-      ORDER BY unidades DESC LIMIT 3
-    `);
+        case 'consultar_stock_producto': {
+          const q = `%${args.nombre}%`;
+          const [rows] = await pool.query(`
+            SELECT p.referencia, p.nombre,
+                   COALESCE(i.cantidad_actual, 0) AS stock,
+                   COALESCE(sc_def.cantidad, 0) AS defectuosos,
+                   COALESCE(sc_reac.cantidad, 0) AS reacondicionados
+            FROM productos p
+            LEFT JOIN inventario i ON i.id_producto = p.id_producto
+            LEFT JOIN stock_condicion sc_def ON sc_def.id_producto = p.id_producto AND sc_def.condicion = 'DEFECTUOSO'
+            LEFT JOIN stock_condicion sc_reac ON sc_reac.id_producto = p.id_producto AND sc_reac.condicion = 'REACONDICIONADO'
+            WHERE p.nombre LIKE ? OR p.referencia LIKE ?
+            LIMIT 5
+          `, [q, q]);
+          return rows.length ? rows : { mensaje: `No encontré productos con "${args.nombre}"` };
+        }
 
-    // 2. Construir el prompt con el contexto
-    const prompt = `Eres el asistente virtual de FerreStock, sistema de gestión de ferretería.
-Responde SIEMPRE en español, breve (máximo 3 líneas), útil y amable. No uses markdown.
+        case 'listar_productos_bajo_stock': {
+          const [rows] = await pool.query(`
+            SELECT p.referencia, p.nombre, i.cantidad_actual AS stock
+            FROM productos p
+            JOIN inventario i ON i.id_producto = p.id_producto
+            WHERE i.cantidad_actual < 5
+            ORDER BY i.cantidad_actual ASC
+            LIMIT 15
+          `);
+          return rows.length ? rows : { mensaje: 'No hay productos con stock bajo' };
+        }
 
-DATOS REALES DEL NEGOCIO AHORA:
-- Productos en catálogo: ${kpis.productos}
-- Stock total: ${Number(kpis.stock).toFixed(0)} unidades
-- Ventas registradas: ${kpis.ventas}
-- Ingresos cobrados: $${Number(kpis.ingresos).toLocaleString('es-CO')}
-- Productos con stock bajo: ${stockBajo.map(s => `${s.nombre} (${s.cantidad_actual})`).join(', ') || 'ninguno'}
-- Productos más vendidos: ${topVentas.map(t => `${t.nombre} (${t.unidades})`).join(', ') || 'sin datos'}
+        case 'listar_productos_por_categoria': {
+          const q = `%${args.categoria}%`;
+          const [rows] = await pool.query(`
+            SELECT p.referencia, p.nombre, c.nombre AS categoria,
+                   COALESCE(i.cantidad_actual, 0) AS stock
+            FROM productos p
+            JOIN categorias c ON c.id_categoria = p.id_categoria
+            LEFT JOIN inventario i ON i.id_producto = p.id_producto
+            WHERE c.nombre LIKE ?
+            ORDER BY p.nombre
+            LIMIT 30
+          `, [q]);
+          return rows.length ? rows : { mensaje: `No encontré productos en la categoría "${args.categoria}"` };
+        }
 
-Pregunta del usuario: ${mensaje}
+        case 'ventas_del_dia': {
+          const [[data]] = await pool.query(`
+            SELECT COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS total
+            FROM ventas
+            WHERE DATE(fecha_hora) = CURRENT_DATE AND estado <> 'ANULADA'
+          `);
+          return { ventas_hoy: Number(data.cantidad), total_hoy: Number(data.total) };
+        }
 
-Respuesta corta y útil:`;
+        case 'top_productos_vendidos': {
+          const [rows] = await pool.query(`
+            SELECT p.referencia, p.nombre, SUM(dv.cantidad_base) AS unidades
+            FROM detalle_venta dv
+            JOIN productos p ON p.id_producto = dv.id_producto
+            JOIN ventas v ON v.id_venta = dv.id_venta
+            WHERE v.estado <> 'ANULADA'
+            GROUP BY p.id_producto
+            ORDER BY unidades DESC
+            LIMIT 5
+          `);
+          return rows.length ? rows : { mensaje: 'Aún no hay ventas registradas' };
+        }
 
-    // 3. Función de failover entre proveedores
+        case 'saldo_cliente': {
+          const q = `%${args.nombre}%`;
+          const [rows] = await pool.query(`
+            SELECT c.nombre, COALESCE(SUM(cxc.saldo), 0) AS deuda_total
+            FROM clientes c
+            LEFT JOIN cuentas_por_cobrar cxc
+              ON cxc.id_venta IN (SELECT id_venta FROM ventas WHERE id_cliente = c.id_cliente)
+             AND cxc.estado NOT IN ('PAGADA', 'ANULADA')
+            WHERE c.nombre LIKE ?
+            GROUP BY c.id_cliente
+            LIMIT 3
+          `, [q]);
+          return rows.length ? rows : { mensaje: `No encontré clientes con "${args.nombre}"` };
+        }
+
+        case 'listar_clientes': {
+          const [rows] = await pool.query(`
+            SELECT c.nombre, c.limite_credito,
+                   COALESCE(SUM(cxc.saldo), 0) AS deuda
+            FROM clientes c
+            LEFT JOIN cuentas_por_cobrar cxc
+              ON cxc.id_venta IN (SELECT id_venta FROM ventas WHERE id_cliente = c.id_cliente)
+             AND cxc.estado NOT IN ('PAGADA', 'ANULADA')
+            GROUP BY c.id_cliente
+            ORDER BY c.nombre
+            LIMIT 20
+          `);
+          return rows.length ? rows : { mensaje: 'No hay clientes registrados' };
+        }
+
+        case 'ventas_recientes': {
+          const [rows] = await pool.query(`
+            SELECT v.id_venta,
+                   COALESCE(c.nombre, 'Consumidor final') AS cliente,
+                   v.total, v.estado,
+                   DATE_FORMAT(v.fecha_hora, '%Y-%m-%d %H:%i') AS fecha
+            FROM ventas v
+            LEFT JOIN clientes c ON c.id_cliente = v.id_cliente
+            ORDER BY v.id_venta DESC
+            LIMIT 10
+          `);
+          return rows.length ? rows : { mensaje: 'Aún no hay ventas registradas' };
+        }
+
+        case 'resumen_negocio': {
+          const [[kpis]] = await pool.query(`
+            SELECT
+              (SELECT COUNT(*) FROM productos) AS productos,
+              (SELECT COALESCE(SUM(cantidad_actual),0) FROM inventario) AS stock,
+              (SELECT COUNT(*) FROM ventas WHERE estado <> 'ANULADA') AS ventas,
+              (SELECT COALESCE(SUM(CASE WHEN tipo='PAGO' THEN monto ELSE -monto END),0)
+                 FROM pagos WHERE estado='REGISTRADO') AS ingresos
+          `);
+          return {
+            productos: Number(kpis.productos),
+            stock_total: Number(kpis.stock),
+            ventas_registradas: Number(kpis.ventas),
+            ingresos_netos: Number(kpis.ingresos)
+          };
+        }
+
+        default:
+          return { error: `Herramienta desconocida: ${nombre}` };
+      }
+    }
+
+    // ============================================================
+    // 3. System prompt ESTRICTO (anti-alucinación)
+    // ============================================================
+    const systemPrompt = `Eres FerreBot, el asistente virtual del sistema FerreStock para gestión de ferretería.
+
+REGLAS ESTRICTAS:
+1. Responde SIEMPRE en español, máximo 5 líneas, tono profesional y amable.
+2. NO uses markdown ni negritas (no **, no ##, no tablas).
+3. SOLO usa información real obtenida de las herramientas disponibles.
+4. NUNCA inventes datos, cifras, productos ni funcionalidades.
+5. NUNCA digas que puedes enviar correos, generar PDFs, crear enlaces de descarga o hacer llamadas. NO PUEDES.
+6. Si te piden algo que no puedes hacer, di exactamente: "No puedo [acción]. Pero puedo mostrarte [alternativa]".
+7. Si necesitas datos, LLAMA a la herramienta adecuada. No respondas de memoria.
+8. Si no encuentras un producto/cliente/categoría, dilo claramente.
+
+CAPACIDADES REALES:
+- Consultar stock de productos
+- Listar productos por categoría o con stock bajo
+- Ver ventas del día, últimas ventas y top productos
+- Consultar deuda de clientes
+- Mostrar resumen general del negocio
+
+EJEMPLOS DE RESPUESTAS CORRECTAS:
+- Pregunta: "¿Cuántos martillos tengo?" → Llamas consultar_stock_producto("martillo") → Respondes con la cantidad exacta.
+- Pregunta: "Envíame la lista de plomería por correo" → Respondes: "No puedo enviar correos. Pero puedo mostrarte la lista de productos de plomería aquí mismo: ..."
+- Pregunta: "¿Cuánto vendí hoy?" → Llamas ventas_del_dia() → Respondes con el monto exacto.
+
+Ante cualquier ambigüedad, ofrece una alternativa concreta de lo que SÍ puedes hacer.`;
+
+    // ============================================================
+    // 4. Failover Groq → OpenRouter con function calling
+    // ============================================================
     const providers = [
       {
         nombre: 'Groq',
         url: 'https://api.groq.com/openai/v1/chat/completions',
         key: process.env.GROQ_API_KEY,
-        model: 'openai/gpt-oss-120b',
+        model: 'llama-3.3-70b-versatile',
       },
       {
         nombre: 'OpenRouter',
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key: process.env.OPENROUTER_API_KEY,
-        model: 'openrouter/free',
+        model: 'meta-llama/llama-3.3-70b-instruct:free',
       },
     ];
 
@@ -874,52 +1097,110 @@ Respuesta corta y útil:`;
 
     for (const provider of providers) {
       if (!provider.key) {
-        console.warn(`[IA] ${provider.nombre} omitido: falta API_KEY`);
+        console.warn(`[IA] ${provider.nombre} omitido: falta ${provider.nombre === 'Groq' ? 'GROQ_API_KEY' : 'OPENROUTER_API_KEY'}`);
         continue;
       }
 
       try {
-        const response = await fetch(provider.url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${provider.key}`,
-          },
-          body: JSON.stringify({
-            model: provider.model,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.7,
-            max_tokens: 300,
-          }),
-        });
+        // Historial de mensajes
+        const messages = [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: mensaje }
+        ];
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        let respuestaFinal = null;
+        let iteraciones = 0;
+        const MAX_ITERACIONES = 5;
+
+        while (iteraciones < MAX_ITERACIONES && !respuestaFinal) {
+          iteraciones++;
+
+          const response = await fetch(provider.url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${provider.key}`,
+            },
+            body: JSON.stringify({
+              model: provider.model,
+              messages,
+              tools,
+              tool_choice: 'auto',
+              temperature: 0.3,
+              max_tokens: 500,
+            }),
+          });
+
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errText.slice(0, 200)}`);
+          }
+
+          const data = await response.json();
+          const choice = data.choices?.[0]?.message;
+
+          if (!choice) throw new Error('Respuesta vacía del modelo');
+
+          // ¿El modelo quiere llamar herramientas?
+          if (choice.tool_calls && choice.tool_calls.length > 0) {
+            // Agregar respuesta del modelo al historial
+            messages.push({
+              role: 'assistant',
+              content: choice.content || null,
+              tool_calls: choice.tool_calls
+            });
+
+            // Ejecutar cada tool_call
+            for (const call of choice.tool_calls) {
+              const nombreTool = call.function.name;
+              let args = {};
+              try {
+                args = JSON.parse(call.function.arguments || '{}');
+              } catch (e) {
+                args = {};
+              }
+
+              console.log(`[IA] ${provider.nombre} invoca: ${nombreTool}`, args);
+
+              const resultado = await ejecutarTool(nombreTool, args);
+
+              // Agregar respuesta de la tool al historial
+              messages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: JSON.stringify(resultado)
+              });
+            }
+            // Continuar el loop para que el modelo redacte la respuesta final
+            continue;
+          }
+
+          // Si no hay tool_calls → ya tenemos respuesta final
+          respuestaFinal = choice.content?.trim() || 'No pude generar una respuesta.';
         }
 
-        const data = await response.json();
-        const respuesta = data.choices?.[0]?.message?.content?.trim();
-        if (!respuesta) throw new Error('Respuesta vacía del modelo');
+        if (respuestaFinal) {
+          console.log(`[IA] ✅ Respondido por: ${provider.nombre}`);
+          return res.json({ respuesta: respuestaFinal });
+        }
 
-        console.log(`[IA] Respondido por: ${provider.nombre}`);
-        return res.json({ respuesta });
+        throw new Error('Máximo de iteraciones alcanzado sin respuesta final');
 
       } catch (err) {
         ultimoError = err;
-        console.error(`[IA] Falló ${provider.nombre}:`, err.message);
+        console.error(`[IA] ❌ Falló ${provider.nombre}:`, err.message);
         // Continúa al siguiente proveedor
       }
     }
 
-    // Si todos fallaron
-    console.error('❌ Todos los proveedores de IA fallaron.');
-    return res.json({ 
-      respuesta: 'El asistente está temporalmente no disponible. Intenta de nuevo en un momento.' 
+    // Todos fallaron
+    console.error('❌ Todos los proveedores de IA fallaron');
+    return res.json({
+      respuesta: 'El asistente está temporalmente no disponible. Intenta de nuevo en un momento.'
     });
 
   } catch (err) {
-    console.error('Error en /api/chat:', err);
+    console.error('Error crítico en /api/chat:', err);
     res.status(500).json({ error: 'Error procesando el chat.' });
   }
 });
