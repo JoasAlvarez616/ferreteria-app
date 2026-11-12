@@ -805,210 +805,118 @@ app.post('/api/productos/importar', validate(importSchema), async (req, res) => 
 });
 
 // ============================================================
-// CHAT CON IA (Gemini + Function Calling)
+// CHAT CON IA — FAILOVER (Groq → OpenRouter)
 // ============================================================
 app.post('/api/chat', validate(chatSchema), async (req, res) => {
   const { mensaje } = req.body;
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.json({ respuesta: 'El asistente IA no está configurado. Contacta al administrador.' });
-    }
+    // 1. Obtener datos reales del negocio para el contexto
+    const [[kpis]] = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM productos) AS productos,
+        (SELECT COALESCE(SUM(cantidad_actual),0) FROM inventario) AS stock,
+        (SELECT COUNT(*) FROM ventas) AS ventas,
+        (SELECT COALESCE(SUM(CASE WHEN tipo='PAGO' THEN monto ELSE -monto END),0) FROM pagos WHERE estado='REGISTRADO') AS ingresos
+    `);
 
-    // ============================================================
-    // 1. Definir las herramientas (snake_case para la API REST)
-    // ============================================================
-    const tools = [{
-      function_declarations: [ // ✅ CAMBIO CLAVE: snake_case
-        {
-          name: 'consultar_stock_producto',
-          description: 'Consulta el stock actual de un producto por su nombre o referencia.',
-          parameters: {
-            type: 'OBJECT',
-            properties: {
-              nombre: { type: 'STRING', description: 'Nombre o referencia del producto' }
-            },
-            required: ['nombre']
-          }
-        },
-        {
-          name: 'listar_productos_bajo_stock',
-          description: 'Lista los productos con stock vendible menor a 5 unidades.',
-          parameters: { type: 'OBJECT', properties: {} }
-        },
-        {
-          name: 'ventas_del_dia',
-          description: 'Devuelve el total vendido hoy y la cantidad de ventas.',
-          parameters: { type: 'OBJECT', properties: {} }
-        },
-        {
-          name: 'top_productos_vendidos',
-          description: 'Devuelve los 5 productos más vendidos de la historia.',
-          parameters: { type: 'OBJECT', properties: {} }
-        },
-        {
-          name: 'saldo_cliente',
-          description: 'Consulta el saldo deudor pendiente de un cliente por su nombre.',
-          parameters: {
-            type: 'OBJECT',
-            properties: {
-              nombre: { type: 'STRING', description: 'Nombre del cliente' }
-            },
-            required: ['nombre']
-          }
-        },
-        {
-          name: 'productos_por_categoria',
-          description: 'Lista los productos de una categoría específica.',
-          parameters: {
-            type: 'OBJECT',
-            properties: {
-              categoria: { type: 'STRING', description: 'Nombre de la categoría' }
-            },
-            required: ['categoria']
-          }
-        },
-        {
-          name: 'ventas_recientes',
-          description: 'Devuelve las últimas 10 ventas realizadas.',
-          parameters: { type: 'OBJECT', properties: {} }
-        }
-      ]
-    }];
+    const [stockBajo] = await pool.query(`
+      SELECT p.nombre, i.cantidad_actual
+      FROM productos p
+      JOIN inventario i ON i.id_producto = p.id_producto
+      WHERE i.cantidad_actual < 5
+      ORDER BY i.cantidad_actual ASC LIMIT 5
+    `);
 
-    // ============================================================
-    // 2. Ejecutor de herramientas
-    // ============================================================
-    async function ejecutarTool(nombreTool, args) {
-      switch (nombreTool) {
-        case 'consultar_stock_producto': {
-          const q = `%${args.nombre}%`;
-          const [rows] = await pool.query(`
-            SELECT p.referencia, p.nombre, COALESCE(i.cantidad_actual, 0) AS stock
-            FROM productos p
-            LEFT JOIN inventario i ON i.id_producto = p.id_producto
-            WHERE p.nombre LIKE ? OR p.referencia LIKE ?
-            LIMIT 5
-          `, [q, q]);
-          return rows.length ? rows : { mensaje: `No encontré productos con "${args.nombre}"` };
-        }
-        case 'listar_productos_bajo_stock': {
-          const [rows] = await pool.query(`
-            SELECT p.referencia, p.nombre, i.cantidad_actual AS stock
-            FROM productos p JOIN inventario i ON i.id_producto = p.id_producto
-            WHERE i.cantidad_actual < 5 ORDER BY i.cantidad_actual ASC LIMIT 10
-          `);
-          return rows.length ? rows : { mensaje: 'No hay productos con stock bajo' };
-        }
-        case 'ventas_del_dia': {
-          const [[data]] = await pool.query(`
-            SELECT COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS total
-            FROM ventas WHERE DATE(fecha_hora) = CURRENT_DATE AND estado <> 'ANULADA'
-          `);
-          return { ventas_hoy: Number(data.cantidad), total_hoy: Number(data.total) };
-        }
-        case 'top_productos_vendidos': {
-          const [rows] = await pool.query(`
-            SELECT p.nombre, SUM(dv.cantidad_base) AS unidades
-            FROM detalle_venta dv JOIN productos p ON p.id_producto = dv.id_producto
-            JOIN ventas v ON v.id_venta = dv.id_venta WHERE v.estado <> 'ANULADA'
-            GROUP BY p.id_producto ORDER BY unidades DESC LIMIT 5
-          `);
-          return rows.length ? rows : { mensaje: 'Aún no hay ventas registradas' };
-        }
-        case 'saldo_cliente': {
-          const q = `%${args.nombre}%`;
-          const [rows] = await pool.query(`
-            SELECT c.nombre, COALESCE(SUM(cxc.saldo), 0) AS deuda_total
-            FROM clientes c
-            LEFT JOIN cuentas_por_cobrar cxc ON cxc.id_venta IN (SELECT id_venta FROM ventas WHERE id_cliente = c.id_cliente) AND cxc.estado NOT IN ('PAGADA', 'ANULADA')
-            WHERE c.nombre LIKE ? GROUP BY c.id_cliente LIMIT 3
-          `, [q]);
-          return rows.length ? rows : { mensaje: `No encontré clientes con "${args.nombre}"` };
-        }
-        case 'productos_por_categoria': {
-          const q = `%${args.categoria}%`;
-          const [rows] = await pool.query(`
-            SELECT p.referencia, p.nombre, c.nombre AS categoria, COALESCE(i.cantidad_actual, 0) AS stock
-            FROM productos p JOIN categorias c ON c.id_categoria = p.id_categoria
-            LEFT JOIN inventario i ON i.id_producto = p.id_producto
-            WHERE c.nombre LIKE ? ORDER BY p.nombre LIMIT 15
-          `, [q]);
-          return rows.length ? rows : { mensaje: `No encontré productos en categoría "${args.categoria}"` };
-        }
-        case 'ventas_recientes': {
-          const [rows] = await pool.query(`
-            SELECT v.id_venta, COALESCE(c.nombre, 'Consumidor final') AS cliente, v.total, v.estado, DATE_FORMAT(v.fecha_hora, '%Y-%m-%d %H:%i') AS fecha
-            FROM ventas v LEFT JOIN clientes c ON c.id_cliente = v.id_cliente
-            ORDER BY v.id_venta DESC LIMIT 10
-          `);
-          return rows.length ? rows : { mensaje: 'Aún no hay ventas registradas' };
-        }
-        default:
-          return { error: `Tool desconocida: ${nombreTool}` };
+    const [topVentas] = await pool.query(`
+      SELECT p.nombre, SUM(dv.cantidad_base) AS unidades
+      FROM detalle_venta dv
+      JOIN productos p ON p.id_producto = dv.id_producto
+      JOIN ventas v ON v.id_venta = dv.id_venta
+      WHERE v.estado <> 'ANULADA'
+      GROUP BY p.id_producto
+      ORDER BY unidades DESC LIMIT 3
+    `);
+
+    // 2. Construir el prompt con el contexto
+    const prompt = `Eres el asistente virtual de FerreStock, sistema de gestión de ferretería.
+Responde SIEMPRE en español, breve (máximo 3 líneas), útil y amable. No uses markdown.
+
+DATOS REALES DEL NEGOCIO AHORA:
+- Productos en catálogo: ${kpis.productos}
+- Stock total: ${Number(kpis.stock).toFixed(0)} unidades
+- Ventas registradas: ${kpis.ventas}
+- Ingresos cobrados: $${Number(kpis.ingresos).toLocaleString('es-CO')}
+- Productos con stock bajo: ${stockBajo.map(s => `${s.nombre} (${s.cantidad_actual})`).join(', ') || 'ninguno'}
+- Productos más vendidos: ${topVentas.map(t => `${t.nombre} (${t.unidades})`).join(', ') || 'sin datos'}
+
+Pregunta del usuario: ${mensaje}
+
+Respuesta corta y útil:`;
+
+    // 3. Función de failover entre proveedores
+    const providers = [
+      {
+        nombre: 'Groq',
+        url: 'https://api.groq.com/openai/v1/chat/completions',
+        key: process.env.GROQ_API_KEY,
+        model: 'openai/gpt-oss-120b',
+      },
+      {
+        nombre: 'OpenRouter',
+        url: 'https://openrouter.ai/api/v1/chat/completions',
+        key: process.env.OPENROUTER_API_KEY,
+        model: 'openrouter/free',
+      },
+    ];
+
+    let ultimoError = null;
+
+    for (const provider of providers) {
+      if (!provider.key) {
+        console.warn(`[IA] ${provider.nombre} omitido: falta API_KEY`);
+        continue;
       }
-    }
 
-    // ============================================================
-    // 3. Bucle de Function Calling
-    // ============================================================
-    const systemPrompt = `Eres el asistente virtual de FerreStock. Responde en español, breve (máximo 4 líneas), sin markdown. Usa las herramientas para obtener datos reales. Nunca inventes datos.`;
-    let contents = [{ role: 'user', parts: [{ text: systemPrompt + '\n\nPregunta: ' + mensaje }] }];
-    let respuestaFinal = null;
-    let iteraciones = 0;
-    const MAX_ITERACIONES = 5;
-
-    while (iteraciones < MAX_ITERACIONES && !respuestaFinal) {
-      iteraciones++;
-      const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
-        {
+      try {
+        const response = await fetch(provider.url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents, tools, generationConfig: { maxOutputTokens: 500, temperature: 0.5 } })
-        }
-      );
-
-      if (!r.ok) {
-        const errBody = await r.text();
-        console.error('Gemini API error:', errBody); // 👈 Revisa esto en Render Logs
-        return res.json({ respuesta: 'Error técnico con la IA. Revisa los logs.' });
-      }
-
-      const data = await r.json();
-      const candidate = data.candidates?.[0]?.content;
-      if (!candidate) return res.json({ respuesta: 'No pude generar una respuesta.' });
-
-      // Buscar si Gemini quiere ejecutar una función
-      const functionCallPart = candidate.parts?.find(p => p.functionCall);
-      const functionCall = functionCallPart?.functionCall;
-
-      if (functionCall) {
-        const resultadoTool = await ejecutarTool(functionCall.name, functionCall.args || {});
-        
-        // ✅ CLAVE: Añadir la respuesta de la función con rol "user" e id de correlación
-        contents.push({ role: 'model', parts: [{ functionCall: functionCall }] });
-        contents.push({
-          role: 'user',
-          parts: [{
-            functionResponse: {
-              name: functionCall.name,
-              id: functionCall.id, // 👈 Incluir el ID que devuelve Gemini
-              response: { resultado: resultadoTool }
-            }
-          }]
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${provider.key}`,
+          },
+          body: JSON.stringify({
+            model: provider.model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.7,
+            max_tokens: 300,
+          }),
         });
-        continue; // Volver a llamar a Gemini con el resultado
-      }
 
-      // Si no hay functionCall, ya tenemos la respuesta en texto
-      const texto = candidate.parts?.filter(p => p.text).map(p => p.text).join(' ').trim();
-      respuestaFinal = texto || 'No pude procesar tu pregunta.';
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        const respuesta = data.choices?.[0]?.message?.content?.trim();
+        if (!respuesta) throw new Error('Respuesta vacía del modelo');
+
+        console.log(`[IA] Respondido por: ${provider.nombre}`);
+        return res.json({ respuesta });
+
+      } catch (err) {
+        ultimoError = err;
+        console.error(`[IA] Falló ${provider.nombre}:`, err.message);
+        // Continúa al siguiente proveedor
+      }
     }
 
-    if (!respuestaFinal) respuestaFinal = 'Tu pregunta es muy compleja. Intenta algo más concreto.';
-    res.json({ respuesta: respuestaFinal });
+    // Si todos fallaron
+    console.error('❌ Todos los proveedores de IA fallaron.');
+    return res.json({ 
+      respuesta: 'El asistente está temporalmente no disponible. Intenta de nuevo en un momento.' 
+    });
 
   } catch (err) {
     console.error('Error en /api/chat:', err);
