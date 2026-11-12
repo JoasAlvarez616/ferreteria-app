@@ -1420,6 +1420,14 @@ html, body { overflow-x: hidden; max-width: 100vw; }
       <option value="CONTADO">💵 Contado (paga ahora)</option>
       <option value="CREDITO">📝 Crédito (queda pendiente)</option>
     </select>
+    <div id="venta-dias-container" style="display:none;">
+      <label style="margin-top: 12px;">Días de vencimiento</label>
+      <input id="venta-dias-vencimiento" type="number" value="30" min="1" max="365" step="1">
+    </div>
+    <div id="venta-dias-container" style="display:none;">
+  <label style="margin-top: 12px;">Días de vencimiento</label>
+  <input id="venta-dias-vencimiento" type="number" value="30" min="1" max="365" step="1">
+</div>
     <label style="margin-top: 20px;">Productos</label>
     <div id="items-container"></div>
     <button class="btn ghost sm" onclick="agregarLinea()" style="margin-top:8px;">＋ Agregar línea</button>
@@ -1605,6 +1613,7 @@ html, body { overflow-x: hidden; max-width: 100vw; }
 const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   ? 'http://localhost:3000/api'
   : 'https://ferreteria-app-hlq5.onrender.com/api';
+  const TASA_IVA = 0.19; // IVA Colombia 19% - debe coincidir con el backend
 const fmt = n => new Intl.NumberFormat('es-CO', { style:'currency', currency:'COP', maximumFractionDigits:0 }).format(n || 0);
 const fmtNum = n => new Intl.NumberFormat('es-CO', { maximumFractionDigits:0 }).format(n || 0);
 
@@ -2264,6 +2273,11 @@ async function abrirModalVenta() {
     sel.value = '';
   } catch {}
   document.getElementById('venta-forma-pago').value = 'CONTADO';
+  document.getElementById('venta-dias-container').style.display = 'none';
+  document.getElementById('venta-dias-vencimiento').value = 30;
+  document.getElementById('venta-forma-pago').onchange = (e) => {
+    document.getElementById('venta-dias-container').style.display = e.target.value === 'CREDITO' ? 'block' : 'none';
+  };
   document.getElementById('items-container').innerHTML = '';
   agregarLinea();
   abrirModal('modal-venta');
@@ -2291,7 +2305,7 @@ function recalcular() {
     const p = Number(l.querySelector('.item-precio').value)   || 0;
     subtotal += c * p;
   });
-  const iva = Math.round(subtotal * 0.19);
+  const iva = Math.round(subtotal * TASA_IVA);
   document.getElementById('venta-subtotal').textContent = fmt(subtotal);
   document.getElementById('venta-iva').textContent      = fmt(iva);
   document.getElementById('venta-total').textContent    = fmt(subtotal + iva);
@@ -2305,7 +2319,6 @@ async function guardarVenta() {
     const select = l.querySelector('.item-producto');
     const opt = select.options[select.selectedIndex];
     const idPresentacion = Number(opt.dataset.presentacion);
-
     if (cant > 0 && idPresentacion) {
       items.push({
         id_producto:     Number(select.value),
@@ -2316,15 +2329,13 @@ async function guardarVenta() {
       });
     }
   });
-
   if (!items.length) return toast('Agrega al menos una línea', true);
-
   const id_cliente = Number(document.getElementById('venta-cliente').value) || null;
   const forma_pago = document.getElementById('venta-forma-pago').value;
-
+  const dias_vencimiento = Number(document.getElementById('venta-dias-vencimiento').value) || 30;
   const r = await apiFetch('/ventas', {
     method: 'POST',
-    body: JSON.stringify({ items, id_cliente, forma_pago })
+    body: JSON.stringify({ items, id_cliente, forma_pago, dias_vencimiento })
   });
   const data = await r.json();
   if (!r.ok) return toast(data.error || 'Error', true);

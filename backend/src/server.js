@@ -6,7 +6,9 @@ import { pool } from './db.js';
 import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
 
+
 const app = express();
+const TASA_IVA = 0.19; // 19% Colombia - centralizado
 app.set('trust proxy', 1);
 app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
 app.use(express.json({ limit: '10mb' }));
@@ -250,7 +252,7 @@ app.get('/api/ventas', async (_req, res) => {
 });
 
 app.post('/api/ventas', async (req, res) => {
-  const { items, id_cliente, forma_pago = 'CONTADO' } = req.body;
+  const { items, id_cliente, forma_pago = 'CONTADO', dias_vencimiento = 30 } = req.body;
   const id_usuario = req.user.id_usuario;
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'items es obligatorio' });
@@ -259,7 +261,7 @@ app.post('/api/ventas', async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    // Validar stock antes de vender
+    // 1. Validar stock
     for (const item of items) {
       const [[{ cantidad_base: cantBase }]] = await conn.query(
         'SELECT cantidad_base FROM presentaciones WHERE id_presentacion = ?',
@@ -276,43 +278,76 @@ app.post('/api/ventas', async (req, res) => {
       }
     }
 
-    // Registrar venta
+    // 2. Calcular total estimado (para validar crédito antes de insertar)
+    let totalEstimado = 0;
+    for (const item of items) {
+      totalEstimado += Number(item.cantidad) * Number(item.precio_unitario) * (1 + TASA_IVA);
+    }
+
+    // 3. Validar límite de crédito si es a CRÉDITO
+    if (forma_pago === 'CREDITO') {
+      if (!id_cliente) {
+        throw new Error('Una venta a crédito requiere cliente');
+      }
+      const [[cliente]] = await conn.query(
+        'SELECT nombre, limite_credito FROM clientes WHERE id_cliente = ?',
+        [id_cliente]
+      );
+      if (!cliente) throw new Error('Cliente no encontrado');
+
+      const [[{ deudaActual }]] = await conn.query(`
+        SELECT COALESCE(SUM(saldo), 0) AS deudaActual
+        FROM cuentas_por_cobrar
+        WHERE id_venta IN (SELECT id_venta FROM ventas WHERE id_cliente = ?)
+          AND estado NOT IN ('PAGADA', 'ANULADA')
+      `, [id_cliente]);
+
+      const limite = Number(cliente.limite_credito);
+      const deudaTotal = Number(deudaActual) + totalEstimado;
+
+      if (limite > 0 && deudaTotal > limite) {
+        throw new Error(
+          `Límite de crédito excedido para ${cliente.nombre}. ` +
+          `Deuda actual: $${Number(deudaActual).toLocaleString('es-CO')}, ` +
+          `nueva venta: $${totalEstimado.toLocaleString('es-CO')}, ` +
+          `límite: $${limite.toLocaleString('es-CO')}`
+        );
+      }
+    }
+
+    // 4. Registrar venta
     await conn.query('SET @id_venta = 0');
     await conn.query('CALL sp_registrar_venta(?, ?, CAST(? AS JSON), @id_venta)',
       [id_usuario, id_cliente || null, JSON.stringify(items)]);
     const [[{ id_venta }]] = await conn.query('SELECT @id_venta AS id_venta');
-
-    // Obtener venta
     const [[venta]] = await conn.query(
       'SELECT id_venta, subtotal, iva, total, estado FROM ventas WHERE id_venta = ?',
       [id_venta]
     );
 
-    // Si es CONTADO → registrar pago completo
+    // 5. CONTADO → pago completo
     if (forma_pago === 'CONTADO') {
       await conn.query('CALL sp_registrar_pago(?, ?, ?, ?, ?)',
         [id_venta, venta.total, 'EFECTIVO', 'Pago contado automático', id_usuario]);
     }
-    // Si es CREDITO y hay cliente → crear CxC automática
+    // 6. CRÉDITO → CxC automática
     else if (forma_pago === 'CREDITO' && id_cliente) {
-      await conn.query(`
-        INSERT INTO cuentas_por_cobrar (id_venta, fecha_vencimiento, monto_original, saldo, estado)
-        VALUES (?, DATE_ADD(CURRENT_DATE, INTERVAL 30 DAY), ?, ?, 'PENDIENTE')
-      `, [id_venta, venta.total, venta.total]);
-      await conn.query("UPDATE ventas SET estado = 'CREDITO' WHERE id_venta = ?", [id_venta]);
-      venta.estado = 'CREDITO';
-    }
+  await conn.query(`
+    INSERT INTO cuentas_por_cobrar (id_venta, fecha_vencimiento, monto_original, saldo, estado)
+    VALUES (?, DATE_ADD(CURRENT_DATE, INTERVAL ? DAY), ?, ?, 'PENDIENTE')
+  `, [id_venta, Number(dias_vencimiento) || 30, venta.total, venta.total]);
+  await conn.query("UPDATE ventas SET estado = 'CREDITO' WHERE id_venta = ?", [id_venta]);
+}
 
     const [[ventaFinal]] = await conn.query(
       'SELECT id_venta, subtotal, iva, total, estado FROM ventas WHERE id_venta = ?',
       [id_venta]
     );
-
     await conn.commit();
     res.status(201).json({ ok: true, venta: ventaFinal });
   } catch (err) {
     await conn.rollback();
-    res.status(500).json({ error: err.message });
+    res.status(400).json({ error: err.message });
   } finally { conn.release(); }
 });
 
@@ -371,25 +406,50 @@ app.post('/api/ventas/:id/devolucion', async (req, res) => {
     try {
       await conn.beginTransaction();
 
-      // 1. Registrar la devolución (dispara trigger de stock por condición)
+      // 1. Validar que no devuelva más de lo vendido
+      for (const item of items) {
+        const [[info]] = await conn.query(`
+          SELECT dv.cantidad AS vendida,
+                 COALESCE(SUM(dd.cantidad), 0) AS devuelta,
+                 p.nombre AS producto
+          FROM detalle_venta dv
+          JOIN productos p ON p.id_producto = dv.id_producto
+          LEFT JOIN detalle_devolucion dd ON dd.id_detalle_venta = dv.id_detalle_venta
+          WHERE dv.id_detalle_venta = ?
+          GROUP BY dv.id_detalle_venta
+        `, [item.id_detalle_venta]);
+
+        if (!info) {
+          throw new Error(`Detalle de venta ${item.id_detalle_venta} no existe`);
+        }
+
+        const disponible = Number(info.vendida) - Number(info.devuelta);
+        if (Number(item.cantidad) > disponible) {
+          throw new Error(
+            `No puedes devolver ${item.cantidad} de "${info.producto}". ` +
+            `Disponible para devolver: ${disponible}`
+          );
+        }
+      }
+
+      // 2. Registrar la devolución
       await conn.query('SET @id_dev = 0');
       await conn.query('CALL sp_registrar_devolucion(?, ?, ?, CAST(? AS JSON), @id_dev)',
         [id, id_usuario, motivo || null, JSON.stringify(items)]);
       const [[{ id_dev }]] = await conn.query('SELECT @id_dev AS id_dev');
 
-      // 2. Calcular monto devuelto (con IVA)
+      // 3. Calcular monto devuelto
       const [[{ monto_dev }]] = await conn.query(`
-        SELECT COALESCE(SUM(dd.cantidad * dv.precio_unitario * 1.19), 0) AS monto_dev
+        SELECT COALESCE(SUM(dd.cantidad * dv.precio_unitario * (1 + ${TASA_IVA})), 0) AS monto_dev
         FROM detalle_devolucion dd
         JOIN detalle_venta dv ON dv.id_detalle_venta = dd.id_detalle_venta
         WHERE dd.id_devolucion = ?
       `, [id_dev]);
 
-      // 3. Verificar si la venta estaba PAGADA para registrar reembolso
+      // 4. Registrar reembolso si la venta estaba PAGADA o CREDITO
       const [[venta]] = await conn.query(
         'SELECT estado FROM ventas WHERE id_venta = ?', [id]
       );
-
       if ((venta.estado === 'PAGADA' || venta.estado === 'CREDITO') && Number(monto_dev) > 0) {
         await conn.query(`
           INSERT INTO pagos (id_venta, id_devolucion, tipo, monto, metodo_pago, referencia, id_usuario, estado)
@@ -401,7 +461,7 @@ app.post('/api/ventas/:id/devolucion', async (req, res) => {
       res.status(201).json({ ok: true, id_devolucion: id_dev, monto_devuelto: Number(monto_dev) });
     } catch (err) {
       await conn.rollback();
-      throw err;
+      res.status(400).json({ error: err.message });
     } finally { conn.release(); }
   } catch (err) {
     res.status(500).json({ error: err.message });
