@@ -1078,18 +1078,18 @@ Ante cualquier ambigüedad, ofrece una alternativa concreta de lo que SÍ puedes
     // ============================================================
     // 4. Failover Groq → OpenRouter con function calling
     // ============================================================
-    const providers = [
+        const providers = [
       {
         nombre: 'Groq',
         url: 'https://api.groq.com/openai/v1/chat/completions',
         key: process.env.GROQ_API_KEY,
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-120b', // ✅ Reemplazo oficial de Groq para Llama 3.3
       },
       {
         nombre: 'OpenRouter',
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key: process.env.OPENROUTER_API_KEY,
-        model: 'meta-llama/llama-3.3-70b-instruct:free',
+        model: 'openrouter/free', // ✅ Enrutador oficial de modelos gratuitos
       },
     ];
 
