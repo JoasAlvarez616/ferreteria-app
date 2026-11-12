@@ -2702,6 +2702,33 @@ async function cargarReportes() {
   ]);
 }
 
+// ============================================================
+// Helpers para charts: evitan destruir el <canvas> al mostrar "Sin datos"
+// ============================================================
+function renderChartEmpty(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const wrap = canvas.parentElement;
+  canvas.style.display = 'none';
+  let msg = wrap.querySelector('.chart-empty');
+  if (!msg) {
+    msg = document.createElement('div');
+    msg.className = 'chart-empty';
+    msg.innerHTML = emptyState('📊', 'Sin datos');
+    wrap.appendChild(msg);
+  }
+}
+
+function renderChartReady(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  const wrap = canvas.parentElement;
+  canvas.style.display = 'block';
+  const msg = wrap.querySelector('.chart-empty');
+  if (msg) msg.remove();
+  return canvas;
+}
+
 async function cargarChartVentasDia() {
   const data = await (await apiFetch('/reportes/ventas-por-dia')).json();
   const mapa = {};
@@ -2742,15 +2769,18 @@ async function cargarChartVentasDia() {
 
 async function cargarChartTopProductos() {
   const data = await (await apiFetch('/reportes/top-productos')).json();
-  if (charts.top) charts.top.destroy();
+  if (charts.top) { charts.top.destroy(); charts.top = null; }
+
   if (!data.length) {
-    document.getElementById('chart-top').parentElement.innerHTML =
-      '<h3>Top 5 productos</h3>' + emptyState('📊', 'Sin datos');
+    renderChartEmpty('chart-top');
     return;
   }
+  const canvas = renderChartReady('chart-top');
+  if (!canvas) return;
+
   const border = cssVar('--line-soft');
   const textMuted = cssVar('--steel');
-  charts.top = new Chart(document.getElementById('chart-top'), {
+  charts.top = new Chart(canvas, {
     type: 'bar',
     data: {
       labels: data.map(p => `${p.referencia} — ${p.nombre}`),
@@ -2774,14 +2804,17 @@ async function cargarChartTopProductos() {
 
 async function cargarChartCategorias() {
   const data = await (await apiFetch('/reportes/por-categoria')).json();
-  if (charts.categoria) charts.categoria.destroy();
+  if (charts.categoria) { charts.categoria.destroy(); charts.categoria = null; }
+
   if (!data.length) {
-    document.getElementById('chart-categoria').parentElement.innerHTML =
-      '<h3>Ventas por categoría</h3>' + emptyState('📊', 'Sin datos');
+    renderChartEmpty('chart-categoria');
     return;
   }
+  const canvas = renderChartReady('chart-categoria');
+  if (!canvas) return;
+
   const textMuted = cssVar('--steel');
-  charts.categoria = new Chart(document.getElementById('chart-categoria'), {
+  charts.categoria = new Chart(canvas, {
     type: 'doughnut',
     data: {
       labels: data.map(c => c.categoria),
@@ -2814,55 +2847,62 @@ async function cargarReporteDefectuosos() {
   const textMuted = cssVar('--steel');
   const border = cssVar('--line-soft');
 
-  if (charts.defCategoria) charts.defCategoria.destroy();
+  // --- Chart: defectuosos por categoría ---
+  if (charts.defCategoria) { charts.defCategoria.destroy(); charts.defCategoria = null; }
   if (porCategoria.length) {
-    charts.defCategoria = new Chart(document.getElementById('chart-def-categoria'), {
-      type: 'doughnut',
-      data: {
-        labels: porCategoria.map(c => c.categoria),
-        datasets: [{
-          data: porCategoria.map(c => Number(c.total)),
-          backgroundColor: ['#B91C1C','#EA580C','#B45309','#991B1B','#C2410C','#92400E','#7F1D1D','#A16207'],
-          borderWidth: 3, borderColor: cssVar('--ink'),
-        }]
-      },
-      options: {
-        cutout: '62%',
-        plugins: { legend: { position: 'bottom', labels: { font: { size: 10, family: 'JetBrains Mono' }, padding: 10, boxWidth: 10, boxHeight: 10, color: textMuted } } }
-      }
-    });
-  } else {
-    document.getElementById('chart-def-categoria').parentElement.innerHTML =
-      '<h3>Defectuosos por categoría</h3>' + emptyState('📊', 'Sin datos');
-  }
-
-  if (charts.devCondicion) charts.devCondicion.destroy();
-  if (devolucionesPorCondicion.length) {
-    const colorMap = { BUENO: '#15803D', DEFECTUOSO: '#B91C1C', REACONDICIONADO: '#B45309' };
-    charts.devCondicion = new Chart(document.getElementById('chart-dev-condicion'), {
-      type: 'bar',
-      data: {
-        labels: devolucionesPorCondicion.map(d => d.condicion),
-        datasets: [{
-          label: 'Unidades', data: devolucionesPorCondicion.map(d => Number(d.unidades)),
-          backgroundColor: devolucionesPorCondicion.map(d => colorMap[d.condicion] || '#78716C'),
-          borderRadius: 3, barThickness: 40,
-          borderColor: cssVar('--ink'), borderWidth: 1.5,
-        }]
-      },
-      options: {
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, ticks: { color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: border } },
-          x: { ticks: { color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { display: false } }
+    const canvas = renderChartReady('chart-def-categoria');
+    if (canvas) {
+      charts.defCategoria = new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+          labels: porCategoria.map(c => c.categoria),
+          datasets: [{
+            data: porCategoria.map(c => Number(c.total)),
+            backgroundColor: ['#B91C1C','#EA580C','#B45309','#991B1B','#C2410C','#92400E','#7F1D1D','#A16207'],
+            borderWidth: 3, borderColor: cssVar('--ink'),
+          }]
+        },
+        options: {
+          cutout: '62%',
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 10, family: 'JetBrains Mono' }, padding: 10, boxWidth: 10, boxHeight: 10, color: textMuted } } }
         }
-      }
-    });
+      });
+    }
   } else {
-    document.getElementById('chart-dev-condicion').parentElement.innerHTML =
-      '<h3>Devoluciones por condición</h3>' + emptyState('📊', 'Sin datos');
+    renderChartEmpty('chart-def-categoria');
   }
 
+  // --- Chart: devoluciones por condición ---
+  if (charts.devCondicion) { charts.devCondicion.destroy(); charts.devCondicion = null; }
+  if (devolucionesPorCondicion.length) {
+    const canvas = renderChartReady('chart-dev-condicion');
+    if (canvas) {
+      const colorMap = { BUENO: '#15803D', DEFECTUOSO: '#B91C1C', REACONDICIONADO: '#B45309' };
+      charts.devCondicion = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: devolucionesPorCondicion.map(d => d.condicion),
+          datasets: [{
+            label: 'Unidades', data: devolucionesPorCondicion.map(d => Number(d.unidades)),
+            backgroundColor: devolucionesPorCondicion.map(d => colorMap[d.condicion] || '#78716C'),
+            borderRadius: 3, barThickness: 40,
+            borderColor: cssVar('--ink'), borderWidth: 1.5,
+          }]
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: border } },
+            x: { ticks: { color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { display: false } }
+          }
+        }
+      });
+    }
+  } else {
+    renderChartEmpty('chart-dev-condicion');
+  }
+
+  // --- Tabla de stock no vendible ---
   const cont = document.getElementById('tabla-defectuosos');
   if (!porProducto.length) {
     cont.innerHTML = emptyState('🔧', 'Sin stock no vendible');

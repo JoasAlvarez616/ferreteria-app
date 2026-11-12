@@ -576,11 +576,11 @@ app.post('/api/cuentas-por-cobrar/:id/pago', validate(pagoCxCSchema), async (req
         [cuenta.id_venta, monto, metodo_pago || 'EFECTIVO', referencia || null, id_usuario]);
       await conn.query(
         `UPDATE cuentas_por_cobrar
-         SET saldo = GREATEST(0, saldo - ?),
-             estado = CASE
+         SET estado = CASE
                WHEN saldo - ? <= 0 THEN 'PAGADA'
                ELSE 'PAGADA_PARCIAL'
-             END
+             END,
+             saldo = GREATEST(0, saldo - ?)
          WHERE id_cuenta = ?`,
         [monto, monto, id]
       );
@@ -1204,6 +1204,12 @@ Ante cualquier ambigüedad, ofrece una alternativa concreta de lo que SÍ puedes
     res.status(500).json({ error: 'Error procesando el chat.' });
   }
 });
+
+// ============================================================
+// ERROR HANDLERS (deben ir DESPUÉS de todas las rutas)
+// ============================================================
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 // ============================================================
 // START
