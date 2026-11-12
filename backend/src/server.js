@@ -535,14 +535,23 @@ app.post('/api/ventas/:id/credito', async (req, res) => {
     );
     if (existe.length) return res.status(400).json({ error: 'Esta venta ya tiene cuenta por cobrar' });
 
-    const dias = Number(dias_vencimiento) || 30;
-    const [r] = await pool.query(
-      `INSERT INTO cuentas_por_cobrar
-       (id_venta, fecha_vencimiento, monto_original, saldo, estado)
-       VALUES (?, DATE_ADD(CURRENT_DATE, INTERVAL ? DAY), ?, ?, 'PENDIENTE')`,
-      [id, dias, venta.total, venta.total]
-    );
-    res.status(201).json({ ok: true, id_cuenta: r.insertId });
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const dias = Number(dias_vencimiento) || 30;
+      const [r] = await conn.query(
+        `INSERT INTO cuentas_por_cobrar
+         (id_venta, fecha_vencimiento, monto_original, saldo, estado)
+         VALUES (?, DATE_ADD(CURRENT_DATE, INTERVAL ? DAY), ?, ?, 'PENDIENTE')`,
+        [id, dias, venta.total, venta.total]
+      );
+      await conn.query("UPDATE ventas SET estado = 'CREDITO' WHERE id_venta = ?", [id]);
+      await conn.commit();
+      res.status(201).json({ ok: true, id_cuenta: r.insertId });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally { conn.release(); }
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -562,9 +571,9 @@ app.post('/api/cuentas-por-cobrar/:id/pago', validate(pagoCxCSchema), async (req
 
     const conn = await pool.getConnection();
     try {
+      await conn.beginTransaction();
       await conn.query('CALL sp_registrar_pago(?, ?, ?, ?, ?)',
         [cuenta.id_venta, monto, metodo_pago || 'EFECTIVO', referencia || null, id_usuario]);
-
       await conn.query(
         `UPDATE cuentas_por_cobrar
          SET saldo = GREATEST(0, saldo - ?),
@@ -575,7 +584,11 @@ app.post('/api/cuentas-por-cobrar/:id/pago', validate(pagoCxCSchema), async (req
          WHERE id_cuenta = ?`,
         [monto, monto, id]
       );
+      await conn.commit();
       res.json({ ok: true });
+    } catch (err) {
+      await conn.rollback();
+      throw err;
     } finally { conn.release(); }
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

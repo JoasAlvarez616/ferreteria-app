@@ -1156,6 +1156,42 @@ html, body { overflow-x: hidden; max-width: 100vw; }
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ============================================================
+   SKELETON SCREENS (carga elegante)
+   ============================================================ */
+.skeleton-table {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.skeleton-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.skeleton-cell {
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--paper-alt) 0%,
+    var(--line-soft) 50%,
+    var(--paper-alt) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeletonShine 1.4s ease-in-out infinite;
+}
+.skeleton-cell.short  { flex: 1; }
+.skeleton-cell.medium { flex: 2; }
+.skeleton-cell.long   { flex: 3; }
+.skeleton-cell.tiny   { flex: 0 0 40px; }
+@keyframes skeletonShine {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 </style>
 </head>
 <body>
@@ -1778,6 +1814,17 @@ function emptyState(icon, text) {
   return `<div class="empty"><span class="empty-icon">${icon}</span>${text}</div>`;
 }
 
+function skeletonTable(rows = 5, cols = 6) {
+  const colClasses = ['short', 'long', 'medium', 'short', 'tiny', 'short'];
+  const rowHtml = Array(cols).fill(0).map((_, i) =>
+    `<div class="skeleton-cell ${colClasses[i % colClasses.length]}"></div>`
+  ).join('');
+  const html = Array(rows).fill(0).map(() =>
+    `<div class="skeleton-row">${rowHtml}</div>`
+  ).join('');
+  return `<div class="skeleton-table">${html}</div>`;
+}
+
 function exportarLibro(sheets, filename) {
   const wb = XLSX.utils.book_new();
   Object.entries(sheets).forEach(([name, rows]) => {
@@ -1919,9 +1966,9 @@ async function cargarKPIs() {
 
 async function cargarProductos() {
   try {
+    document.getElementById('tabla-productos').innerHTML = skeletonTable(6, 8);
     const data = await (await apiFetch('/productos')).json();
     productosCache = data;
-    // Llenar el selector de categorías (solo la primera vez)
     const selCat = document.getElementById('filtro-categoria');
     if (selCat && selCat.options.length === 1) {
       const cats = [...new Set(data.map(p => p.categoria))].sort();
@@ -1935,6 +1982,7 @@ async function cargarProductos() {
     filtrarProductos();
   } catch (e) {
     console.warn('Error cargando productos:', e.message);
+    document.getElementById('tabla-productos').innerHTML = emptyState('⚠️', 'Error al cargar productos');
     throw e;
   }
 }
@@ -1999,6 +2047,7 @@ function filtrarProductos() {
 
 async function cargarVentas() {
   try {
+    document.getElementById('tabla-ventas').innerHTML = skeletonTable(5, 7);
     const data = await (await apiFetch('/ventas')).json();
     ventasCache = data;
     const c = document.getElementById('tabla-ventas');
@@ -2022,6 +2071,7 @@ async function cargarVentas() {
     </tr>`).join('')}</tbody></table>`;
   } catch (e) {
     console.warn('Error cargando ventas:', e.message);
+    document.getElementById('tabla-ventas').innerHTML = emptyState('⚠️', 'Error al cargar ventas');
     throw e;
   }
 }
@@ -2366,27 +2416,34 @@ function switchTab(id) {
 }
 
 async function cargarClientes() {
-  const data = await (await apiFetch('/clientes')).json();
-  clientesCache = data;
-  const c = document.getElementById('tabla-clientes');
-  if (!data.length) return c.innerHTML = emptyState('👥', 'Sin clientes');
-  c.innerHTML = `<table><thead><tr>
-    <th>#</th><th>Nombre</th><th>Documento</th><th>Teléfono</th>
-    <th style="text-align:right;">Límite</th><th style="text-align:right;">Deuda</th><th>Estado</th>
-  </tr></thead><tbody>${data.map(cl => {
-    const deuda = Number(cl.deuda_actual);
-    const limite = Number(cl.limite_credito);
-    const sobrepasado = limite > 0 && deuda > limite;
-    return `<tr>
-      <td class="mono">#${cl.id_cliente}</td>
-      <td><strong>${cl.nombre}</strong></td>
-      <td class="mono" style="font-size:11.5px;">${cl.tipo_documento} ${cl.numero_documento || '—'}</td>
-      <td class="mono" style="font-size:11.5px;">${cl.telefono || '—'}</td>
-      <td style="text-align:right;" class="mono">${fmt(limite)}</td>
-      <td style="text-align:right;color:${sobrepasado ? 'var(--danger)' : 'var(--success)'};font-weight:700;" class="mono">${fmt(deuda)}</td>
-      <td>${cl.estado}</td>
-    </tr>`;
-  }).join('')}</tbody></table>`;
+  try {
+    document.getElementById('tabla-clientes').innerHTML = skeletonTable(5, 7);
+    const data = await (await apiFetch('/clientes')).json();
+    clientesCache = data;
+    const c = document.getElementById('tabla-clientes');
+    if (!data.length) return c.innerHTML = emptyState('👥', 'Sin clientes');
+    c.innerHTML = `<table><thead><tr>
+      <th>#</th><th>Nombre</th><th>Documento</th><th>Teléfono</th>
+      <th style="text-align:right;">Límite</th><th style="text-align:right;">Deuda</th><th>Estado</th>
+    </tr></thead><tbody>${data.map(cl => {
+      const deuda = Number(cl.deuda_actual);
+      const limite = Number(cl.limite_credito);
+      const sobrepasado = limite > 0 && deuda > limite;
+      return `<tr>
+        <td class="mono">#${cl.id_cliente}</td>
+        <td><strong>${cl.nombre}</strong></td>
+        <td class="mono" style="font-size:11.5px;">${cl.tipo_documento} ${cl.numero_documento || '—'}</td>
+        <td class="mono" style="font-size:11.5px;">${cl.telefono || '—'}</td>
+        <td style="text-align:right;" class="mono">${fmt(limite)}</td>
+        <td style="text-align:right;color:${sobrepasado ? 'var(--danger)' : 'var(--success)'};font-weight:700;" class="mono">${fmt(deuda)}</td>
+        <td>${cl.estado}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+  } catch (e) {
+    console.warn('Error cargando clientes:', e.message);
+    document.getElementById('tabla-clientes').innerHTML = emptyState('⚠️', 'Error al cargar clientes');
+    throw e;
+  }
 }
 
 async function abrirModalCliente() {
@@ -2414,25 +2471,32 @@ async function guardarCliente() {
 }
 
 async function cargarCartera() {
-  const data = await (await apiFetch('/cuentas-por-cobrar')).json();
-  carteraCache = data;
-  const c = document.getElementById('tabla-cartera');
-  if (!data.length) return c.innerHTML = emptyState('💳', 'Sin cuentas por cobrar');
-  c.innerHTML = `<table><thead><tr>
-    <th>#</th><th>Cliente</th><th>Venta</th><th>Vence</th>
-    <th style="text-align:right;">Original</th><th style="text-align:right;">Saldo</th>
-    <th>Estado</th><th></th>
-  </tr></thead><tbody>${data.map(cx => `<tr>
-    <td class="mono">#${cx.id_cuenta}</td>
-    <td><strong>${cx.cliente}</strong></td>
-    <td class="mono">#${cx.id_venta}</td>
-    <td class="mono" style="font-size:11.5px;">${String(cx.fecha_vencimiento).slice(0,10)}</td>
-    <td style="text-align:right;" class="mono">${fmt(cx.monto_original)}</td>
-    <td style="text-align:right;color:var(--danger);font-weight:700;" class="mono">${fmt(cx.saldo)}</td>
-    <td>${cx.estado}</td>
-    <td>${cx.estado !== 'PAGADA' ?
-      `<button class="btn sm" onclick="abrirModalPagoCxC(${cx.id_cuenta})">Pagar</button>` : ''}</td>
-  </tr>`).join('')}</tbody></table>`;
+  try {
+    document.getElementById('tabla-cartera').innerHTML = skeletonTable(5, 8);
+    const data = await (await apiFetch('/cuentas-por-cobrar')).json();
+    carteraCache = data;
+    const c = document.getElementById('tabla-cartera');
+    if (!data.length) return c.innerHTML = emptyState('💳', 'Sin cuentas por cobrar');
+    c.innerHTML = `<table><thead><tr>
+      <th>#</th><th>Cliente</th><th>Venta</th><th>Vence</th>
+      <th style="text-align:right;">Original</th><th style="text-align:right;">Saldo</th>
+      <th>Estado</th><th></th>
+    </tr></thead><tbody>${data.map(cx => `<tr>
+      <td class="mono">#${cx.id_cuenta}</td>
+      <td><strong>${cx.cliente}</strong></td>
+      <td class="mono">#${cx.id_venta}</td>
+      <td class="mono" style="font-size:11.5px;">${String(cx.fecha_vencimiento).slice(0,10)}</td>
+      <td style="text-align:right;" class="mono">${fmt(cx.monto_original)}</td>
+      <td style="text-align:right;color:var(--danger);font-weight:700;" class="mono">${fmt(cx.saldo)}</td>
+      <td>${cx.estado}</td>
+      <td>${cx.estado !== 'PAGADA' ?
+        `<button class="btn sm" onclick="abrirModalPagoCxC(${cx.id_cuenta})">Pagar</button>` : ''}</td>
+    </tr>`).join('')}</tbody></table>`;
+  } catch (e) {
+    console.warn('Error cargando cartera:', e.message);
+    document.getElementById('tabla-cartera').innerHTML = emptyState('⚠️', 'Error al cargar cartera');
+    throw e;
+  }
 }
 
 async function abrirModalCredito(id_venta) {
