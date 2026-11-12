@@ -1,3 +1,14 @@
+import { validate } from './middleware/validate.js';
+import {
+  loginSchema,
+  productoSchema,
+  ventaSchema,
+  clienteSchema,
+  devolucionSchema,
+  pagoCxCSchema,
+  importSchema,
+  chatSchema,
+} from './schemas/index.js';
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
@@ -5,7 +16,8 @@ import 'dotenv/config';
 import { pool } from './db.js';
 import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
-
+import { AppError } from './utils/errors.js';
+import { errorHandler, notFoundHandler, asyncHandler } from './middleware/errorHandler.js';
 
 const app = express();
 const TASA_IVA = 0.19; // 19% Colombia - centralizado
@@ -66,11 +78,8 @@ app.use('/api', (req, res, next) => {
 // ============================================================
 // AUTH
 // ============================================================
-app.post('/api/auth/login', loginLimiter, async (req, res) => {
+app.post('/api/auth/login', loginLimiter, validate(loginSchema), async (req, res) => {
   const { usuario, password } = req.body;
-  if (!usuario || !password) {
-    return res.status(400).json({ error: 'usuario y password son obligatorios' });
-  }
   try {
     const [[user]] = await pool.query(
       'SELECT id_usuario, nombre, usuario, password_hash, estado FROM usuarios WHERE usuario = ?',
@@ -160,12 +169,9 @@ app.get('/api/productos', async (_req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/productos', async (req, res) => {
+app.post('/api/productos', validate(productoSchema), async (req, res) => {
   const { referencia, nombre, id_categoria, id_marca, id_unidad_base,
           presentacion, cantidad_base } = req.body;
-  if (!referencia || !nombre || !id_categoria || !id_unidad_base) {
-    return res.status(400).json({ error: 'Campos obligatorios: referencia, nombre, id_categoria, id_unidad_base' });
-  }
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -251,12 +257,9 @@ app.get('/api/ventas', async (_req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/ventas', async (req, res) => {
+app.post('/api/ventas', validate(ventaSchema), async (req, res) => {
   const { items, id_cliente, forma_pago = 'CONTADO', dias_vencimiento = 30 } = req.body;
   const id_usuario = req.user.id_usuario;
-  if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'items es obligatorio' });
-  }
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -274,11 +277,12 @@ app.post('/api/ventas', async (req, res) => {
       );
       if (Number(stock) < cantTotal) {
         const [[p]] = await conn.query('SELECT nombre FROM productos WHERE id_producto = ?', [item.id_producto]);
-        throw new Error(`Stock insuficiente para "${p.nombre}". Disponible: ${Number(stock).toFixed(0)}, solicitado: ${cantTotal.toFixed(0)}`);
+        throw new AppError(`Stock insuficiente para "${p.nombre}". Disponible: ${Number(stock).toFixed(0)}, solicitado: ${cantTotal.toFixed(0)}`, 400);
       }
     }
+    // ⬆⬆⬆ ESTE ES EL } QUE FALTABA (cierra el for)
 
-    // 2. Calcular total estimado (para validar crédito antes de insertar)
+    // 2. Calcular total estimado
     let totalEstimado = 0;
     for (const item of items) {
       totalEstimado += Number(item.cantidad) * Number(item.precio_unitario) * (1 + TASA_IVA);
@@ -287,13 +291,13 @@ app.post('/api/ventas', async (req, res) => {
     // 3. Validar límite de crédito si es a CRÉDITO
     if (forma_pago === 'CREDITO') {
       if (!id_cliente) {
-        throw new Error('Una venta a crédito requiere cliente');
+        throw new AppError('Una venta a crédito requiere cliente', 400);
       }
       const [[cliente]] = await conn.query(
         'SELECT nombre, limite_credito FROM clientes WHERE id_cliente = ?',
         [id_cliente]
       );
-      if (!cliente) throw new Error('Cliente no encontrado');
+      if (!cliente) throw new AppError('Cliente no encontrado', 404);
 
       const [[{ deudaActual }]] = await conn.query(`
         SELECT COALESCE(SUM(saldo), 0) AS deudaActual
@@ -306,7 +310,7 @@ app.post('/api/ventas', async (req, res) => {
       const deudaTotal = Number(deudaActual) + totalEstimado;
 
       if (limite > 0 && deudaTotal > limite) {
-        throw new Error(
+        throw new AppError(
           `Límite de crédito excedido para ${cliente.nombre}. ` +
           `Deuda actual: $${Number(deudaActual).toLocaleString('es-CO')}, ` +
           `nueva venta: $${totalEstimado.toLocaleString('es-CO')}, ` +
@@ -332,12 +336,12 @@ app.post('/api/ventas', async (req, res) => {
     }
     // 6. CRÉDITO → CxC automática
     else if (forma_pago === 'CREDITO' && id_cliente) {
-  await conn.query(`
-    INSERT INTO cuentas_por_cobrar (id_venta, fecha_vencimiento, monto_original, saldo, estado)
-    VALUES (?, DATE_ADD(CURRENT_DATE, INTERVAL ? DAY), ?, ?, 'PENDIENTE')
-  `, [id_venta, Number(dias_vencimiento) || 30, venta.total, venta.total]);
-  await conn.query("UPDATE ventas SET estado = 'CREDITO' WHERE id_venta = ?", [id_venta]);
-}
+      await conn.query(`
+        INSERT INTO cuentas_por_cobrar (id_venta, fecha_vencimiento, monto_original, saldo, estado)
+        VALUES (?, DATE_ADD(CURRENT_DATE, INTERVAL ? DAY), ?, ?, 'PENDIENTE')
+      `, [id_venta, Number(dias_vencimiento) || 30, venta.total, venta.total]);
+      await conn.query("UPDATE ventas SET estado = 'CREDITO' WHERE id_venta = ?", [id_venta]);
+    }
 
     const [[ventaFinal]] = await conn.query(
       'SELECT id_venta, subtotal, iva, total, estado FROM ventas WHERE id_venta = ?',
@@ -392,15 +396,11 @@ app.get('/api/ventas/:id/detalle', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/ventas/:id/devolucion', async (req, res) => {
+app.post('/api/ventas/:id/devolucion', validate(devolucionSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const { motivo, items } = req.body;
     const id_usuario = req.user.id_usuario;
-
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'items es obligatorio' });
-    }
 
     const conn = await pool.getConnection();
     try {
@@ -420,12 +420,12 @@ app.post('/api/ventas/:id/devolucion', async (req, res) => {
         `, [item.id_detalle_venta]);
 
         if (!info) {
-          throw new Error(`Detalle de venta ${item.id_detalle_venta} no existe`);
+          throw new AppError(`Detalle de venta ${item.id_detalle_venta} no existe`, 404);
         }
 
         const disponible = Number(info.vendida) - Number(info.devuelta);
         if (Number(item.cantidad) > disponible) {
-          throw new Error(
+          throw new AppError(
             `No puedes devolver ${item.cantidad} de "${info.producto}". ` +
             `Disponible para devolver: ${disponible}`
           );
@@ -488,9 +488,8 @@ app.get('/api/clientes', async (_req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/clientes', async (req, res) => {
+app.post('/api/clientes', validate(clienteSchema), async (req, res) => {
   const { nombre, tipo_documento, numero_documento, telefono, direccion, limite_credito } = req.body;
-  if (!nombre) return res.status(400).json({ error: 'nombre es obligatorio' });
   try {
     const [r] = await pool.query(
       `INSERT INTO clientes (nombre, tipo_documento, numero_documento, telefono, direccion, limite_credito)
@@ -547,7 +546,7 @@ app.post('/api/ventas/:id/credito', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/cuentas-por-cobrar/:id/pago', async (req, res) => {
+app.post('/api/cuentas-por-cobrar/:id/pago', validate(pagoCxCSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const { monto, metodo_pago, referencia } = req.body;
@@ -557,7 +556,6 @@ app.post('/api/cuentas-por-cobrar/:id/pago', async (req, res) => {
       'SELECT id_venta, saldo FROM cuentas_por_cobrar WHERE id_cuenta = ?', [id]
     );
     if (!cuenta) return res.status(404).json({ error: 'Cuenta no encontrada' });
-    if (Number(monto) <= 0) return res.status(400).json({ error: 'Monto debe ser positivo' });
     if (Number(monto) > Number(cuenta.saldo)) {
       return res.status(400).json({ error: `Monto supera el saldo (${cuenta.saldo})` });
     }
@@ -686,11 +684,8 @@ app.get('/api/reportes/defectuosos', async (_req, res) => {
 // ============================================================
 // IMPORTAR PRODUCTOS EN LOTE
 // ============================================================
-app.post('/api/productos/importar', async (req, res) => {
+app.post('/api/productos/importar', validate(importSchema), async (req, res) => {
   const { items } = req.body;
-  if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: 'No hay productos para importar' });
-  }
 
   const conn = await pool.getConnection();
   const resultado = { creados: 0, errores: [], categorias_creadas: [], marcas_creadas: [] };
@@ -799,9 +794,8 @@ app.post('/api/productos/importar', async (req, res) => {
 // ============================================================
 // CHAT CON IA (Gemini)
 // ============================================================
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', validate(chatSchema), async (req, res) => {
   const { mensaje } = req.body;
-  if (!mensaje) return res.status(400).json({ error: 'Falta mensaje' });
 
   try {
     const [[kpis]] = await pool.query(`
@@ -873,6 +867,12 @@ Respuesta corta y útil:`;
     res.status(500).json({ error: err.message });
   }
 });
+
+// ============================================================
+// MANEJO DE ERRORES (debe ir al final, después de las rutas)
+// ============================================================
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 // ============================================================
 // START
