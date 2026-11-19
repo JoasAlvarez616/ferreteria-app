@@ -19,6 +19,7 @@ import rateLimit from 'express-rate-limit';
 import { AppError } from './utils/errors.js';
 import { errorHandler, notFoundHandler, asyncHandler } from './middleware/errorHandler.js';
 import { generarFacturaPDF } from './factura.js';
+import { ThermalPrinter, PrinterTypes } from 'node-thermal-printer';
 
 
 const app = express();
@@ -387,6 +388,118 @@ app.get('/api/ventas/:id/factura', async (req, res) => {
   } catch (err) {
     console.error('Error generando factura:', err);
     res.status(500).json({ error: 'No se pudo generar la factura' });
+  }
+});
+
+// ============================================================
+// TICKET ESC/POS (para impresora térmica POS)
+// ============================================================
+app.get('/api/ventas/:id/ticket-escpos', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const [[venta]] = await pool.query(`
+      SELECT v.id_venta, v.fecha_hora, v.subtotal, v.iva, v.total, v.estado,
+             COALESCE(c.nombre, 'Consumidor Final') AS cliente,
+             c.tipo_documento, c.numero_documento,
+             u.usuario AS cajero
+      FROM ventas v
+      LEFT JOIN clientes c ON c.id_cliente = v.id_cliente
+      LEFT JOIN usuarios u ON u.id_usuario = v.id_usuario
+      WHERE v.id_venta = ?
+    `, [id]);
+    if (!venta) return res.status(404).json({ error: 'Venta no encontrada' });
+
+    const [lineas] = await pool.query(`
+      SELECT p.nombre, dv.cantidad, dv.precio_unitario,
+             (dv.cantidad * dv.precio_unitario) AS subtotal_linea
+      FROM detalle_venta dv
+      JOIN productos p ON p.id_producto = dv.id_producto
+      WHERE dv.id_venta = ?
+    `, [id]);
+
+    // CUFE (mismo cálculo que la factura PDF)
+    const FERRETERIA = {
+      nit: process.env.FERRETERIA_NIT || '900.123.456-7',
+      claveTecnica: process.env.FERRETERIA_CLAVE_TECNICA || 'fc8eac422eba16e22ffd8c6f94b3f40a6e38162c',
+    };
+    const cufe = crypto.createHash('sha384')
+      .update([
+        FERRETERIA.nit,
+        `POS-${String(venta.id_venta).padStart(6, '0')}`,
+        venta.fecha_hora,
+        venta.total, venta.iva, venta.subtotal,
+        FERRETERIA.claveTecnica,
+      ].join('|'))
+      .digest('hex').substring(0, 96);
+    const qrUrl = `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${cufe}`;
+
+    // Construir ticket ESC/POS
+    const printer = new ThermalPrinter({
+      type: PrinterTypes.EPSON,
+      width: 42,
+      characterSet: 'SRA3',
+      removeSpecialCharacters: false,
+      lineCharacter: '-',
+    });
+
+    printer.alignCenter();
+    printer.bold(true);
+    printer.println((process.env.FERRETERIA_NOMBRE || 'FERRETERIA DEMO').toUpperCase());
+    printer.bold(false);
+    printer.println(`NIT: ${FERRETERIA.nit}`);
+    printer.println(process.env.FERRETERIA_DIR || 'Calle 10 #20-30');
+    printer.println(`Tel: ${process.env.FERRETERIA_TEL || '300 123 4567'}`);
+    printer.drawLine();
+    printer.bold(true);
+    printer.println('DOCUMENTO EQUIVALENTE ELECTRONICO');
+    printer.println('TIQUETE POS');
+    printer.bold(false);
+    printer.drawLine();
+
+    printer.alignLeft();
+    printer.println(`Tiquete: POS-${String(venta.id_venta).padStart(6, '0')}`);
+    printer.println(`Fecha: ${String(venta.fecha_hora).slice(0, 16)}`);
+    printer.println(`Cajero: ${venta.cajero || 'admin'}`);
+    printer.println(`Cliente: ${venta.cliente}`);
+    if (venta.numero_documento) {
+      printer.println(`${venta.tipo_documento || 'CC'}: ${venta.numero_documento}`);
+    }
+    printer.drawLine();
+
+    lineas.forEach(l => {
+      const desc = String(l.nombre).substring(0, 24);
+      printer.println(`${l.cantidad} x ${desc}`);
+      printer.leftRight('', `$${Number(l.subtotal_linea).toLocaleString('es-CO')}`);
+    });
+    printer.drawLine();
+
+    printer.leftRight('Subtotal:', `$${Number(venta.subtotal).toLocaleString('es-CO')}`);
+    printer.leftRight('IVA 19%:', `$${Number(venta.iva).toLocaleString('es-CO')}`);
+    printer.bold(true);
+    printer.leftRight('TOTAL:', `$${Number(venta.total).toLocaleString('es-CO')}`);
+    printer.bold(false);
+    printer.drawLine();
+
+    printer.alignCenter();
+    await printer.printQR(qrUrl, { cellSize: 6, correctionLevel: 'M' });
+    printer.println('Escanee para verificar');
+    printer.println('en la DIAN');
+    printer.drawLine();
+    printer.println('CUFE:');
+    const cufeChunks = cufe.match(/.{1,42}/g) || [cufe];
+    cufeChunks.forEach(c => printer.println(c));
+    printer.drawLine();
+    printer.println('!Gracias por su compra!');
+    printer.newLine();
+    printer.newLine();
+    printer.cut();
+
+    const buffer = printer.getBuffer();
+    res.json({ ticket: buffer.toString('base64') });
+  } catch (err) {
+    console.error('Error ESC/POS:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
