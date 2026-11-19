@@ -889,6 +889,206 @@ app.get('/api/reportes/ventas-por-dia', async (_req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ============================================================
+// REPORTES: ventas agrupadas por día/semana/mes/año con rango
+// ============================================================
+app.get('/api/reportes/ventas-agrupadas', async (req, res) => {
+  try {
+    const granularidad = (req.query.granularidad || 'dia').toLowerCase();
+    const desde = req.query.desde || '1900-01-01';
+    const hasta = req.query.hasta || '2100-12-31';
+
+    if (!['dia', 'semana', 'mes', 'anio'].includes(granularidad)) {
+      return res.status(400).json({ error: 'Granularidad inválida. Usa: dia|semana|mes|anio' });
+    }
+
+    let sql = '';
+    let formatLabel = null;
+
+    if (granularidad === 'dia') {
+      sql = `
+        SELECT DATE(fecha_hora) AS periodo,
+               COUNT(*) AS ventas,
+               COALESCE(SUM(total), 0) AS total
+        FROM ventas
+        WHERE DATE(fecha_hora) BETWEEN ? AND ?
+          AND estado <> 'ANULADA'
+        GROUP BY DATE(fecha_hora)
+        ORDER BY periodo
+      `;
+      formatLabel = (p) => {
+        const d = new Date(String(p) + 'T12:00:00');
+        return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+      };
+    } else if (granularidad === 'semana') {
+      sql = `
+        SELECT YEARWEEK(fecha_hora, 1) AS periodo,
+               MIN(DATE(fecha_hora)) AS fecha_inicio,
+               COUNT(*) AS ventas,
+               COALESCE(SUM(total), 0) AS total
+        FROM ventas
+        WHERE DATE(fecha_hora) BETWEEN ? AND ?
+          AND estado <> 'ANULADA'
+        GROUP BY YEARWEEK(fecha_hora, 1)
+        ORDER BY periodo
+      `;
+      formatLabel = (p, row) => {
+        const d = new Date(String(row.fecha_inicio) + 'T12:00:00');
+        return `Sem ${d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}`;
+      };
+    } else if (granularidad === 'mes') {
+      sql = `
+        SELECT DATE_FORMAT(fecha_hora, '%Y-%m') AS periodo,
+               COUNT(*) AS ventas,
+               COALESCE(SUM(total), 0) AS total
+        FROM ventas
+        WHERE DATE(fecha_hora) BETWEEN ? AND ?
+          AND estado <> 'ANULADA'
+        GROUP BY DATE_FORMAT(fecha_hora, '%Y-%m')
+        ORDER BY periodo
+      `;
+      formatLabel = (p) => {
+        const [anio, mes] = String(p).split('-');
+        const d = new Date(Number(anio), Number(mes) - 1, 15);
+        return d.toLocaleDateString('es-CO', { month: 'short', year: '2-digit' });
+      };
+    } else {
+      sql = `
+        SELECT YEAR(fecha_hora) AS periodo,
+               COUNT(*) AS ventas,
+               COALESCE(SUM(total), 0) AS total
+        FROM ventas
+        WHERE DATE(fecha_hora) BETWEEN ? AND ?
+          AND estado <> 'ANULADA'
+        GROUP BY YEAR(fecha_hora)
+        ORDER BY periodo
+      `;
+      formatLabel = (p) => String(p);
+    }
+
+    const [rows] = await pool.query(sql, [desde, hasta]);
+
+    const datos = rows.map(r => ({
+      periodo: String(r.periodo),
+      label: formatLabel(r.periodo, r),
+      ventas: Number(r.ventas),
+      total: Number(r.total),
+    }));
+
+    const totales = datos.reduce(
+      (acc, d) => ({ ventas: acc.ventas + d.ventas, total: acc.total + d.total }),
+      { ventas: 0, total: 0 }
+    );
+
+    res.json({
+      granularidad,
+      desde,
+      hasta,
+      datos,
+      totales,
+    });
+  } catch (err) {
+    console.error('Error ventas-agrupadas:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// EXPORTAR EXCEL POR RANGO (todas las ventas + resúmenes)
+// ============================================================
+app.get('/api/reportes/exportar', async (req, res) => {
+  try {
+    const desde = req.query.desde || '1900-01-01';
+    const hasta = req.query.hasta || '2100-12-31';
+
+    // 1. Ventas completas del rango
+    const [ventas] = await pool.query(`
+      SELECT v.id_venta, v.fecha_hora, v.total, v.subtotal, v.iva, v.estado,
+             COALESCE(c.nombre, 'Consumidor Final') AS cliente,
+             c.tipo_documento, c.numero_documento,
+             u.usuario AS vendedor
+      FROM ventas v
+      LEFT JOIN clientes c ON c.id_cliente = v.id_cliente
+      JOIN usuarios u ON u.id_usuario = v.id_usuario
+      WHERE DATE(v.fecha_hora) BETWEEN ? AND ?
+      ORDER BY v.fecha_hora DESC
+    `, [desde, hasta]);
+
+    // 2. Resumen mensual
+    const [mensual] = await pool.query(`
+      SELECT DATE_FORMAT(fecha_hora, '%Y-%m') AS periodo,
+             COUNT(*) AS ventas,
+             COALESCE(SUM(total), 0) AS total
+      FROM ventas
+      WHERE DATE(fecha_hora) BETWEEN ? AND ? AND estado <> 'ANULADA'
+      GROUP BY DATE_FORMAT(fecha_hora, '%Y-%m')
+      ORDER BY periodo
+    `, [desde, hasta]);
+
+    // 3. Resumen diario
+    const [diario] = await pool.query(`
+      SELECT DATE(fecha_hora) AS fecha,
+             COUNT(*) AS ventas,
+             COALESCE(SUM(total), 0) AS total
+      FROM ventas
+      WHERE DATE(fecha_hora) BETWEEN ? AND ? AND estado <> 'ANULADA'
+      GROUP BY DATE(fecha_hora)
+      ORDER BY fecha
+    `, [desde, hasta]);
+
+    // 4. Top productos del rango
+    const [topProductos] = await pool.query(`
+      SELECT p.referencia, p.nombre,
+             SUM(dv.cantidad_base) AS unidades,
+             SUM(dv.subtotal) AS total
+      FROM detalle_venta dv
+      JOIN productos p ON p.id_producto = dv.id_producto
+      JOIN ventas v ON v.id_venta = dv.id_venta
+      WHERE DATE(v.fecha_hora) BETWEEN ? AND ? AND v.estado <> 'ANULADA'
+      GROUP BY p.id_producto
+      ORDER BY unidades DESC
+      LIMIT 20
+    `, [desde, hasta]);
+
+    // 5. Clientes activos en el rango
+    const [clientesRango] = await pool.query(`
+      SELECT c.nombre, c.tipo_documento, c.numero_documento,
+             COUNT(v.id_venta) AS compras,
+             COALESCE(SUM(v.total), 0) AS total_comprado
+      FROM ventas v
+      JOIN clientes c ON c.id_cliente = v.id_cliente
+      WHERE DATE(v.fecha_hora) BETWEEN ? AND ? AND v.estado <> 'ANULADA'
+      GROUP BY c.id_cliente
+      ORDER BY total_comprado DESC
+    `, [desde, hasta]);
+
+    // 6. Totales del período
+    const totales = ventas.filter(v => v.estado !== 'ANULADA').reduce(
+      (acc, v) => ({
+        ventas: acc.ventas + 1,
+        ingresos: acc.ingresos + Number(v.total),
+      }),
+      { ventas: 0, ingresos: 0 }
+    );
+
+    res.json({
+      periodo: { desde, hasta },
+      totales: {
+        ...totales,
+        ticket_promedio: totales.ventas > 0 ? Math.round(totales.ingresos / totales.ventas) : 0,
+      },
+      ventas,
+      mensual,
+      diario,
+      topProductos,
+      clientesRango,
+    });
+  } catch (err) {
+    console.error('Error exportar:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/reportes/top-productos', async (_req, res) => {
   try {
     const [rows] = await pool.query(`

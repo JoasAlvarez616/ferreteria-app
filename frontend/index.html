@@ -1457,21 +1457,57 @@ tr.clickable:focus-visible {
 
       <div class="tab-content" id="tab-reportes">
 
-        <div class="grid-2-1">
-          <div class="chart-card">
-            <h3>Ventas últimos 7 días</h3>
-            <canvas id="chart-ventas-dia" height="90"></canvas>
-          </div>
-          <div class="chart-card">
-            <h3>Ventas por categoría</h3>
-            <canvas id="chart-categoria" height="200"></canvas>
-          </div>
-        </div>
+       <!-- Controles de filtro para el gráfico -->
+<div class="chart-card" style="margin-bottom: 18px; padding: 16px 18px;">
+  <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+    <div style="font-family:'Archivo Black',sans-serif; font-size:12px; text-transform:uppercase; letter-spacing:-.01em;">
+      Ventas por período
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-left:auto;">
+      <select id="ventas-granularidad" onchange="cargarChartVentasFiltrado()"
+        style="padding:8px 12px; border:2px solid var(--ink); border-radius:var(--radius-sm); background:var(--cream); color:var(--ink); font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;">
+        <option value="dia">Por día</option>
+        <option value="semana">Por semana</option>
+        <option value="mes" selected>Por mes</option>
+        <option value="anio">Por año</option>
+      </select>
+      <select id="ventas-rango" onchange="cambiarRangoVentas()"
+        style="padding:8px 12px; border:2px solid var(--ink); border-radius:var(--radius-sm); background:var(--cream); color:var(--ink); font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;">
+        <option value="7d">Últimos 7 días</option>
+        <option value="30d">Últimos 30 días</option>
+        <option value="mes_actual">Este mes</option>
+        <option value="mes_anterior">Mes anterior</option>
+        <option value="anio_actual">Este año</option>
+        <option value="mes" selected>Último año</option>
+        <option value="todo">Todo el histórico</option>
+        <option value="custom">Personalizado...</option>
+      </select>
+    </div>
+  </div>
+  <div id="ventas-custom" style="display:none; margin-top:10px; gap:8px; flex-wrap:wrap; align-items:center;">
+    <input type="date" id="ventas-desde" 
+      style="padding:6px 10px; border:2px solid var(--ink); border-radius:var(--radius-sm); background:var(--cream); color:var(--ink); font-family:'JetBrains Mono',monospace; font-size:11px;">
+    <span style="font-family:'JetBrains Mono',monospace; font-size:11px;">→</span>
+    <input type="date" id="ventas-hasta" 
+      style="padding:6px 10px; border:2px solid var(--ink); border-radius:var(--radius-sm); background:var(--cream); color:var(--ink); font-family:'JetBrains Mono',monospace; font-size:11px;">
+    <button class="btn sm" onclick="cargarChartVentasFiltrado()" style="font-size:10px;">Aplicar</button>
+  </div>
+  <div style="margin-top: 12px;">
+    <canvas id="chart-ventas-dia" height="100"></canvas>
+  </div>
+  <div id="ventas-resumen" style="margin-top:12px; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--steel); text-align:right;"></div>
+</div>
 
-        <div class="chart-card" style="margin-bottom: 24px;">
-          <h3>Top 5 productos más vendidos</h3>
-          <canvas id="chart-top" height="70"></canvas>
-        </div>
+<div class="grid-2-1">
+  <div class="chart-card">
+    <h3>Ventas por categoría</h3>
+    <canvas id="chart-categoria" height="200"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Top 5 productos</h3>
+    <canvas id="chart-top" height="200"></canvas>
+  </div>
+</div>
 
         <div class="section-header" style="margin-top: 32px;">
           <div class="section-title">Devoluciones y defectuosos</div>
@@ -1968,74 +2004,103 @@ function exportarLibro(sheets, filename) {
 
 async function exportarExcelCompleto() {
   try {
-    toast('Generando Excel...');
-    const [prod, ventas, clientes, cxc, kpis, defectuosos] = await Promise.all([
+    // Leer el filtro actual del gráfico de ventas
+    const rangoTipo = document.getElementById('ventas-rango')?.value || 'mes';
+    let desde, hasta;
+
+    if (rangoTipo === 'custom') {
+      desde = document.getElementById('ventas-desde')?.value;
+      hasta = document.getElementById('ventas-hasta')?.value;
+      if (!desde || !hasta) {
+        return toast('Elige ambas fechas primero', 'error');
+      }
+    } else {
+      ({ desde, hasta } = calcularRangoVentas(rangoTipo));
+    }
+
+    toast(`Generando Excel (${desde} → ${hasta})...`);
+
+    const [data, productos, cartera, kpis] = await Promise.all([
+      apiFetch(`/reportes/exportar?desde=${desde}&hasta=${hasta}`).then(r => r.json()),
       apiFetch('/productos').then(r => r.json()),
-      apiFetch('/ventas').then(r => r.json()),
-      apiFetch('/clientes').then(r => r.json()),
       apiFetch('/cuentas-por-cobrar').then(r => r.json()),
       apiFetch('/kpis').then(r => r.json()),
-      apiFetch('/reportes/defectuosos').then(r => r.json()),
     ]);
 
-    const fecha = new Date().toISOString().slice(0, 10);
+    const fechaHoy = new Date().toISOString().slice(0, 10);
 
     exportarLibro({
-      'Resumen': [{
+      'Resumen periodo': [{
+        'Desde': desde,
+        'Hasta': hasta,
+        'Total ventas': data.totales.ventas,
+        'Ingresos totales': data.totales.ingresos,
+        'Ticket promedio': data.totales.ticket_promedio,
         'Generado': new Date().toLocaleString('es-CO'),
-        'Total productos': kpis.total_productos,
-        'Total stock': kpis.total_stock,
-        'Total ventas': kpis.total_ventas,
-        'Total ingresos': kpis.total_ingresos,
       }],
-      'Productos': prod.map(p => ({
-        Referencia: p.referencia,
-        Producto: p.nombre,
-        Categoría: p.categoria,
-        Marca: p.marca || '—',
-        Unidad: p.unidad,
-        Stock: Number(p.stock),
-        Defectuosos: Number(p.defectuosos || 0),
-        Reacondicionados: Number(p.reacondicionados || 0),
+      'Resumen mensual': data.mensual.map(m => ({
+        'Período': m.periodo,
+        'Ventas': Number(m.ventas),
+        'Total': Number(m.total),
       })),
-      'Ventas': ventas.map(v => ({
-        ID: v.id_venta,
-        Fecha: String(v.fecha_hora).slice(0, 16),
-        Cliente: v.cliente,
-        Vendedor: v.vendedor,
-        Total: Number(v.total),
-        Estado: v.estado,
+      'Resumen diario': data.diario.map(d => ({
+        'Fecha': String(d.fecha).slice(0, 10),
+        'Ventas': Number(d.ventas),
+        'Total': Number(d.total),
       })),
-      'Clientes': clientes.map(c => ({
-        ID: c.id_cliente,
-        Nombre: c.nombre,
-        Documento: `${c.tipo_documento} ${c.numero_documento || ''}`.trim(),
-        Teléfono: c.telefono || '—',
-        'Límite crédito': Number(c.limite_credito),
-        'Deuda actual': Number(c.deuda_actual || 0),
-        Estado: c.estado,
+      'Ventas detalladas': data.ventas.map(v => ({
+        'ID': v.id_venta,
+        'Fecha': String(v.fecha_hora).slice(0, 16),
+        'Cliente': v.cliente,
+        'Documento': `${v.tipo_documento || ''} ${v.numero_documento || ''}`.trim(),
+        'Vendedor': v.vendedor,
+        'Subtotal': Number(v.subtotal),
+        'IVA': Number(v.iva),
+        'Total': Number(v.total),
+        'Estado': v.estado,
       })),
-      'Cartera': cxc.map(x => ({
-        ID: x.id_cuenta,
-        Cliente: x.cliente,
-        Venta: x.id_venta,
-        Vence: String(x.fecha_vencimiento).slice(0, 10),
+      'Top productos': data.topProductos.map(p => ({
+        'Referencia': p.referencia,
+        'Producto': p.nombre,
+        'Unidades vendidas': Number(p.unidades),
+        'Total vendido': Number(p.total),
+      })),
+      'Clientes del período': data.clientesRango.map(c => ({
+        'Nombre': c.nombre,
+        'Documento': `${c.tipo_documento || ''} ${c.numero_documento || ''}`.trim(),
+        'Compras': Number(c.compras),
+        'Total comprado': Number(c.total_comprado),
+      })),
+      'Inventario actual': productos.map(p => ({
+        'Referencia': p.referencia,
+        'Producto': p.nombre,
+        'Categoría': p.categoria,
+        'Marca': p.marca || '—',
+        'Stock': Number(p.stock),
+        'Defectuosos': Number(p.defectuosos || 0),
+        'Reacondicionados': Number(p.reacondicionados || 0),
+      })),
+      'Cartera actual': cartera.map(x => ({
+        'ID': x.id_cuenta,
+        'Cliente': x.cliente,
+        'Venta': x.id_venta,
+        'Vence': String(x.fecha_vencimiento).slice(0, 10),
         'Monto original': Number(x.monto_original),
-        Saldo: Number(x.saldo),
-        Estado: x.estado,
+        'Saldo': Number(x.saldo),
+        'Estado': x.estado,
       })),
-      'Defectuosos': defectuosos.porProducto.map(d => ({
-        Referencia: d.referencia,
-        Producto: d.nombre,
-        Categoría: d.categoria,
-        Condición: d.condicion,
-        Cantidad: Number(d.cantidad),
-      })),
-    }, `Reporte_FerreStock_${fecha}.xlsx`);
+      'KPIs globales': [{
+        'Productos': kpis.total_productos,
+        'Stock total': kpis.total_stock,
+        'Ventas totales': kpis.total_ventas,
+        'Ingresos netos': kpis.total_ingresos,
+      }],
+    }, `FerreStock_${desde}_a_${hasta}.xlsx`);
 
-    toast('✓ Excel exportado correctamente');
+    toast(`✓ Excel exportado: ${data.totales.ventas} ventas del período`);
   } catch (e) {
-    toast('Error al exportar: ' + e.message, true);
+    console.error(e);
+    toast('Error al exportar: ' + e.message, 'error');
   }
 }
 
@@ -2766,7 +2831,7 @@ let charts = {};
 
 async function cargarReportes() {
   await Promise.all([
-    cargarChartVentasDia(),
+    cargarChartVentasFiltrado(),
     cargarChartTopProductos(),
     cargarChartCategorias(),
     cargarReporteDefectuosos(),
@@ -2800,42 +2865,169 @@ function renderChartReady(canvasId) {
   return canvas;
 }
 
-async function cargarChartVentasDia() {
-  const data = await (await apiFetch('/reportes/ventas-por-dia')).json();
-  const mapa = {};
-  data.forEach(d => { mapa[String(d.fecha).slice(0,10)] = Number(d.total); });
-  const labels = [], valores = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0,10);
-    labels.push(d.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric' }));
-    valores.push(mapa[key] || 0);
+// ============================================================
+// CHART VENTAS CON FILTRO (día/semana/mes/año + rango)
+// ============================================================
+function calcularRangoVentas(tipo) {
+  const hoy = new Date();
+  const y = hoy.getFullYear();
+  const m = hoy.getMonth();
+  let desde, hasta;
+
+  switch (tipo) {
+    case '7d':
+      desde = new Date(hoy.getTime() - 7 * 86400000);
+      hasta = hoy;
+      break;
+    case '30d':
+      desde = new Date(hoy.getTime() - 30 * 86400000);
+      hasta = hoy;
+      break;
+    case 'mes_actual':
+      desde = new Date(y, m, 1);
+      hasta = hoy;
+      break;
+    case 'mes_anterior':
+      desde = new Date(y, m - 1, 1);
+      hasta = new Date(y, m, 0);
+      break;
+    case 'anio_actual':
+      desde = new Date(y, 0, 1);
+      hasta = hoy;
+      break;
+    case 'mes':
+      desde = new Date(y - 1, m, 1);
+      hasta = hoy;
+      break;
+    case 'todo':
+    default:
+      desde = new Date(2020, 0, 1);
+      hasta = hoy;
   }
-  const accent = cssVar('--accent') || '#EA580C';
-  const border = cssVar('--line-soft') || '#D4CCBD';
-  const textMuted = cssVar('--steel') || '#78716C';
-  if (charts.ventasDia) charts.ventasDia.destroy();
-  charts.ventasDia = new Chart(document.getElementById('chart-ventas-dia'), {
-    type: 'line',
-    data: { labels, datasets: [{
-      label: 'Ventas', data: valores,
-      borderColor: accent,
-      backgroundColor: accent + '22',
-      tension: 0.4, fill: true,
-      pointRadius: 5, pointBackgroundColor: accent,
-      pointBorderColor: cssVar('--paper'), pointBorderWidth: 2,
-      borderWidth: 3,
-    }]},
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmt(c.parsed.y) } } },
-      scales: {
-        y: { beginAtZero: true, ticks: { callback: v => fmt(v), color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: border } },
-        x: { ticks: { color: textMuted, font: { family: 'JetBrains Mono', size: 10 } }, grid: { display: false } }
-      }
+
+  const toISO = (d) => d.toISOString().slice(0, 10);
+  return { desde: toISO(desde), hasta: toISO(hasta) };
+}
+
+function cambiarRangoVentas() {
+  const rango = document.getElementById('ventas-rango').value;
+  const custom = document.getElementById('ventas-custom');
+  if (rango === 'custom') {
+    custom.style.display = 'flex';
+    if (!document.getElementById('ventas-desde').value) {
+      const { desde, hasta } = calcularRangoVentas('mes');
+      document.getElementById('ventas-desde').value = desde;
+      document.getElementById('ventas-hasta').value = hasta;
     }
-  });
+    return;
+  }
+  custom.style.display = 'none';
+  cargarChartVentasFiltrado();
+}
+
+async function cargarChartVentasFiltrado() {
+  const granularidad = document.getElementById('ventas-granularidad').value;
+  const rangoTipo = document.getElementById('ventas-rango').value;
+
+  let desde, hasta;
+  if (rangoTipo === 'custom') {
+    desde = document.getElementById('ventas-desde').value;
+    hasta = document.getElementById('ventas-hasta').value;
+    if (!desde || !hasta) return toast('Elige ambas fechas', 'error');
+  } else {
+    ({ desde, hasta } = calcularRangoVentas(rangoTipo));
+  }
+
+  try {
+    const data = await (await apiFetch(
+      `/reportes/ventas-agrupadas?granularidad=${granularidad}&desde=${desde}&hasta=${hasta}`
+    )).json();
+
+    const labels = data.datos.map(d => d.label);
+    const valores = data.datos.map(d => d.total);
+
+    const accent = cssVar('--accent') || '#EA580C';
+    const border = cssVar('--line-soft') || '#D4CCBD';
+    const textMuted = cssVar('--steel') || '#78716C';
+
+    if (charts.ventasDia) charts.ventasDia.destroy();
+
+    // Si hay muchos puntos (más de 30), usar línea. Si son pocos, barras.
+    const esLinea = data.datos.length > 15;
+
+    charts.ventasDia = new Chart(document.getElementById('chart-ventas-dia'), {
+      type: esLinea ? 'line' : 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Ventas ($)',
+          data: valores,
+          borderColor: accent,
+          backgroundColor: esLinea ? accent + '22' : accent,
+          tension: 0.35,
+          fill: esLinea,
+          pointRadius: esLinea ? 4 : 0,
+          pointBackgroundColor: accent,
+          pointBorderColor: cssVar('--paper'),
+          pointBorderWidth: 2,
+          borderWidth: esLinea ? 3 : 1.5,
+          borderRadius: esLinea ? 0 : 4,
+          barThickness: esLinea ? undefined : 'flex',
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: c => `${c.parsed.y !== undefined ? fmt(c.parsed.y) : fmt(c.parsed)}`,
+              afterLabel: (c) => {
+                const idx = c.dataIndex;
+                const v = data.datos[idx];
+                return `Ventas: ${v ? v.ventas : 0}`;
+              },
+            },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: v => fmt(v),
+              color: textMuted,
+              font: { family: 'JetBrains Mono', size: 10 },
+            },
+            grid: { color: border },
+          },
+          x: {
+            ticks: {
+              color: textMuted,
+              font: { family: 'JetBrains Mono', size: 10 },
+              maxRotation: 45,
+              minRotation: 0,
+            },
+            grid: { display: false },
+          },
+        },
+      },
+    });
+
+    // Resumen debajo del gráfico
+    const resumen = document.getElementById('ventas-resumen');
+    if (data.datos.length === 0) {
+      resumen.textContent = 'Sin ventas en el período seleccionado';
+    } else {
+      resumen.innerHTML = `
+        <span style="color:var(--ink); font-weight:700;">${data.totales.ventas}</span> ventas · 
+        Total: <span style="color:var(--accent); font-weight:700;">${fmt(data.totales.total)}</span> · 
+        ${desde} → ${hasta}
+      `;
+    }
+  } catch (e) {
+    console.error('Error cargando ventas filtradas:', e);
+    toast('Error al cargar el gráfico: ' + e.message, 'error');
+  }
 }
 
 async function cargarChartTopProductos() {
