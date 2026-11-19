@@ -1570,10 +1570,8 @@ tr.clickable:focus-visible {
       <label style="margin-top: 12px;">Días de vencimiento</label>
       <input id="venta-dias-vencimiento" type="number" value="30" min="1" max="365" step="1">
     </div>
-    <div id="venta-dias-container" style="display:none;">
-  <label style="margin-top: 12px;">Días de vencimiento</label>
-  <input id="venta-dias-vencimiento" type="number" value="30" min="1" max="365" step="1">
-</div>
+    <label style="margin-top: 20px;">Productos</label>
+    <div id="items-container"></div>
     <label style="margin-top: 20px;">Productos</label>
     <div id="items-container"></div>
     <button class="btn ghost sm" onclick="agregarLinea()" style="margin-top:8px;">＋ Agregar línea</button>
@@ -2173,6 +2171,28 @@ function filtrarProductos() {
   </tr>`).join('')}</tbody></table>`;
 }
 
+async function descargarFactura(idVenta) {
+  try {
+    const token = getToken();
+    const r = await fetch(`${API}/ventas/${idVenta}/factura`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) return toast('No se pudo descargar la factura', 'error');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Factura-${String(idVenta).padStart(6, '0')}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('Factura descargada');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
 async function cargarVentas() {
   try {
     document.getElementById('tabla-ventas').innerHTML = skeletonTable(5, 7);
@@ -2190,12 +2210,14 @@ async function cargarVentas() {
       <td>${v.vendedor}</td>
       <td style="text-align:right;" class="mono"><strong>${fmt(v.total)}</strong></td>
       <td>${v.estado}</td>
-      <td style="display:flex;gap:6px;">
-        ${v.estado !== 'ANULADA' && v.estado !== 'PAGADA' && v.estado !== 'CREDITO' ?
-          `<button class="btn ghost sm" onclick="abrirModalCredito(${v.id_venta})">Crédito</button>` : ''}
-        ${v.estado !== 'ANULADA' ?
-          `<button class="btn ghost sm" onclick="abrirModalDevolucion(${v.id_venta})">Devolver</button>` : ''}
-      </td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
+  ${v.estado !== 'ANULADA' ?
+    `<button class="btn ghost sm" onclick="descargarFactura(${v.id_venta})" title="Descargar PDF">📄 Factura</button>` : ''}
+  ${v.estado !== 'ANULADA' && v.estado !== 'PAGADA' && v.estado !== 'CREDITO' ?
+    `<button class="btn ghost sm" onclick="abrirModalCredito(${v.id_venta})">Crédito</button>` : ''}
+  ${v.estado !== 'ANULADA' ?
+    `<button class="btn ghost sm" onclick="abrirModalDevolucion(${v.id_venta})">Devolver</button>` : ''}
+</td>
     </tr>`).join('')}</tbody></table>`;
   } catch (e) {
     console.warn('Error cargando ventas:', e.message);
