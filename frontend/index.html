@@ -2222,16 +2222,14 @@ async function imprimirTicketPOS(idVenta) {
 
     // 4. Configurar e imprimir
     const config = qz.configs.create(printerName);
+    
+    // Convertir base64 a string binaria (cada char = 1 byte)
     const binaryString = atob(data.ticket);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
 
     await qz.print(config, [{
       type: 'raw',
       format: 'command',
-      data: bytes,
+      data: binaryString,
     }]);
 
     toast('Ticket enviado a la impresora ✓');
