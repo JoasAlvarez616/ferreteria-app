@@ -438,7 +438,7 @@ app.get('/api/ventas/:id/ticket-escpos', async (req, res) => {
     const printer = new ThermalPrinter({
       type: PrinterTypes.EPSON,
       width: 42,
-      characterSet: 'SRA3',
+      characterSet: 'CP850',
       removeSpecialCharacters: false,
       lineCharacter: '-',
     });
