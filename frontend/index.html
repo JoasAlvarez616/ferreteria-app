@@ -2187,7 +2187,7 @@ async function descargarFactura(idVenta) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast('Factura descargada');
+    toast('Ticket POS descargado');
   } catch (e) {
     toast('Error: ' + e.message, 'error');
   }
@@ -2212,7 +2212,7 @@ async function cargarVentas() {
       <td>${v.estado}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;">
   ${v.estado !== 'ANULADA' ?
-    `<button class="btn ghost sm" onclick="descargarFactura(${v.id_venta})" title="Descargar PDF">📄 Factura</button>` : ''}
+    `<button class="btn ghost sm" onclick="descargarFactura(${v.id_venta})" title="Descargar ticket POS">🧾 POS</button>` : ''}
   ${v.estado !== 'ANULADA' && v.estado !== 'PAGADA' && v.estado !== 'CREDITO' ?
     `<button class="btn ghost sm" onclick="abrirModalCredito(${v.id_venta})">Crédito</button>` : ''}
   ${v.estado !== 'ANULADA' ?

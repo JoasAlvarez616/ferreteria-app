@@ -1,90 +1,152 @@
 import PDFDocument from 'pdfkit';
 
-function fmtCOP(n) {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency', currency: 'COP', maximumFractionDigits: 0,
-  }).format(n || 0);
+function fmtNum(n) {
+  return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(n || 0);
+}
+function padRight(str, n) {
+  return String(str).substring(0, n).padEnd(n, ' ');
+}
+function padLeft(str, n) {
+  return String(str).substring(0, n).padStart(n, ' ');
 }
 
 export function generarFacturaPDF(venta, lineas, res) {
   const FERRETERIA = {
-    nombre: process.env.FERRETERIA_NOMBRE || 'FerreStock Demo S.A.S.',
-    nit:    process.env.FERRETERIA_NIT    || '900.123.456-7',
-    dir:    process.env.FERRETERIA_DIR    || 'Calle 10 #20-30, Bogotá',
-    tel:    process.env.FERRETERIA_TEL    || '300 123 4567',
+    nombre:     process.env.FERRETERIA_NOMBRE || 'FerreStock Demo S.A.S.',
+    nit:        process.env.FERRETERIA_NIT    || '900.123.456-7',
+    dir:        process.env.FERRETERIA_DIR    || 'Calle 10 #20-30, Bogotá',
+    tel:        process.env.FERRETERIA_TEL    || '300 123 4567',
+    resolucion: process.env.FERRETERIA_RESOLUCION || 'Resolución DIAN 165 de 2023',
+    rango:      process.env.FERRETERIA_RANGO  || 'POS-000001 al POS-999999',
   };
 
-  const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  // Altura dinámica: mínimo 500pt, máximo 1400pt
+  const numLineas = 15 + lineas.length * 1.5;
+  const altura = Math.min(1400, Math.max(500, Math.round(numLineas * 11 + 60)));
+
+  const doc = new PDFDocument({
+    size: [227, altura], // 80mm de ancho - papel térmico POS
+    margins: { top: 8, bottom: 8, left: 8, right: 8 },
+    info: { Title: `POS-${venta.id_venta}` },
+  });
+
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader(
     'Content-Disposition',
-    `attachment; filename="Factura-${String(venta.id_venta).padStart(6, '0')}.pdf"`
+    `attachment; filename="POS-${String(venta.id_venta).padStart(6, '0')}.pdf"`
   );
   doc.pipe(res);
 
-  doc.fontSize(18).font('Helvetica-Bold').text('FACTURA DE VENTA', { align: 'center' });
-  doc.moveDown(0.3);
-  doc.fontSize(9).font('Helvetica').text(`No. ${String(venta.id_venta).padStart(6, '0')}`, { align: 'center' });
-  doc.moveDown(1);
+  const ANCHO = 227 - 16;
+  const SEP  = '-'.repeat(46);
+  const SEP2 = '='.repeat(46);
+  const GAP  = 3;
 
-  doc.fontSize(10).font('Helvetica-Bold').text('VENDEDOR');
-  doc.font('Helvetica').fontSize(9);
-  doc.text(`${FERRETERIA.nombre}  —  NIT: ${FERRETERIA.nit}`);
-  doc.text(`${FERRETERIA.dir}  —  Tel: ${FERRETERIA.tel}`);
-  doc.moveDown(1);
+  const linea = (txt, size = 7) => {
+    const y = doc.y;
+    doc.fontSize(size).font('Courier').text(txt, 8, y, { width: ANCHO, lineBreak: false });
+    doc.y = y + size + 2;
+  };
+  const centro = (txt, size = 7) => {
+    const y = doc.y;
+    doc.fontSize(size).font('Courier').text(txt, 8, y, { width: ANCHO, align: 'center', lineBreak: false });
+    doc.y = y + size + 2;
+  };
+  const negrita = (txt, size = 7) => {
+    const y = doc.y;
+    doc.fontSize(size).font('Courier-Bold').text(txt, 8, y, { width: ANCHO, lineBreak: false });
+    doc.y = y + size + 2;
+  };
+  const negritaCentro = (txt, size = 7) => {
+    const y = doc.y;
+    doc.fontSize(size).font('Courier-Bold').text(txt, 8, y, { width: ANCHO, align: 'center', lineBreak: false });
+    doc.y = y + size + 2;
+  };
 
-  doc.font('Helvetica-Bold').text('ADQUIRENTE');
-  doc.font('Helvetica').fontSize(9);
-  doc.text(`Nombre: ${venta.cliente}`);
+  // ===== ENCABEZADO =====
+  negritaCentro(FERRETERIA.nombre.toUpperCase(), 8);
+  centro(`NIT: ${FERRETERIA.nit}`, 7);
+  centro(FERRETERIA.dir, 7);
+  centro(`Tel: ${FERRETERIA.tel}`, 7);
+  doc.y += GAP;
+  centro(SEP2, 7);
+  negritaCentro('DOCUMENTO EQUIVALENTE ELECTRÓNICO', 7);
+  negritaCentro('TIQUETE DE MÁQUINA REGISTRADORA - POS', 7);
+  centro(SEP2, 7);
+  doc.y += GAP;
+
+  // ===== DATOS DEL TIQUETE =====
+  linea(`Tiquete No.: POS-${String(venta.id_venta).padStart(6, '0')}`, 7);
+  linea(`Fecha: ${String(venta.fecha_hora).slice(0, 16)}`, 7);
+  linea(`Cajero: ${venta.cajero || 'admin'}`, 7);
+  doc.y += GAP;
+  linea(SEP, 7);
+  doc.y += GAP;
+
+  // ===== CLIENTE =====
+  linea(`Cliente: ${venta.cliente}`, 7);
   if (venta.numero_documento) {
-    doc.text(`${venta.tipo_documento || 'CC'}: ${venta.numero_documento}`);
+    linea(`${venta.tipo_documento || 'CC'}: ${venta.numero_documento}`, 7);
   }
-  doc.text(`Fecha de expedición: ${String(venta.fecha_hora).slice(0, 16)}`);
-  doc.moveDown(1);
+  doc.y += GAP;
+  linea(SEP, 7);
+  doc.y += GAP;
 
-  const yIni = doc.y;
-  doc.font('Helvetica-Bold').fontSize(9);
-  doc.text('Ref.', 50, yIni, { width: 60 });
-  doc.text('Producto', 110, yIni, { width: 230 });
-  doc.text('Cant.', 340, yIni, { width: 50, align: 'right' });
-  doc.text('Vr. Unit.', 390, yIni, { width: 70, align: 'right' });
-  doc.text('Subtotal', 460, yIni, { width: 80, align: 'right' });
-  doc.moveDown(0.5);
-  doc.moveTo(50, doc.y).lineTo(540, doc.y).stroke();
+  // ===== CABECERA PRODUCTOS =====
+  negrita('CANT  DESCRIPCION                  TOTAL', 7);
+  linea(SEP, 7);
 
-  doc.font('Helvetica').fontSize(8.5);
+  // ===== PRODUCTOS =====
   lineas.forEach(l => {
-    const y = doc.y + 3;
-    doc.text(l.referencia, 50, y, { width: 60 });
-    doc.text(String(l.nombre).slice(0, 45), 110, y, { width: 230 });
-    doc.text(String(l.cantidad), 340, y, { width: 50, align: 'right' });
-    doc.text(fmtCOP(l.precio_unitario), 390, y, { width: 70, align: 'right' });
-    doc.text(fmtCOP(l.subtotal_linea), 460, y, { width: 80, align: 'right' });
-    doc.moveDown(0.6);
+    const cant  = padLeft(String(Number(l.cantidad)), 4);
+    const desc  = padRight(String(l.nombre), 25);
+    const total = padLeft(fmtNum(l.subtotal_linea), 13);
+    linea(`${cant}  ${desc} ${total}`, 7);
+    if (Number(l.cantidad) > 1) {
+      linea(`      ${padLeft(String(Number(l.cantidad)), 3)} x ${padLeft(fmtNum(l.precio_unitario), 10)} c/u`, 6);
+    }
   });
 
-  doc.moveDown(0.5);
-  doc.moveTo(50, doc.y).lineTo(540, doc.y).stroke();
-  doc.moveDown(0.5);
+  doc.y += GAP;
+  linea(SEP, 7);
+  doc.y += GAP;
 
-  const yTot = doc.y;
-  doc.font('Helvetica').fontSize(9);
-  doc.text('Subtotal:', 380, yTot, { width: 80, align: 'right' });
-  doc.text(fmtCOP(venta.subtotal), 460, yTot, { width: 80, align: 'right' });
-  doc.text('IVA (19%):', 380, yTot + 14, { width: 80, align: 'right' });
-  doc.text(fmtCOP(venta.iva), 460, yTot + 14, { width: 80, align: 'right' });
-  doc.font('Helvetica-Bold').fontSize(10);
-  doc.text('TOTAL:', 380, yTot + 28, { width: 80, align: 'right' });
-  doc.text(fmtCOP(venta.total), 460, yTot + 28, { width: 80, align: 'right' });
+  // ===== TOTALES =====
+  linea(`${padRight('Subtotal:', 32)}${padLeft(fmtNum(venta.subtotal), 14)}`, 7);
+  linea(`${padRight('IVA 19%:', 32)}${padLeft(fmtNum(venta.iva), 14)}`, 7);
+  doc.y += GAP;
+  negrita(`${padRight('TOTAL:', 32)}${padLeft(fmtNum(venta.total), 14)}`, 8);
+  doc.y += GAP;
+  linea(SEP2, 7);
+  doc.y += GAP;
 
-  doc.moveDown(3);
-  doc.fontSize(7).font('Helvetica').fillColor('#666');
-  doc.text(
-    'Esta factura cumple los requisitos del Art. 617 del Estatuto Tributario. ' +
-    'Documento generado electrónicamente — no requiere firma manuscrita.',
-    { align: 'center' }
-  );
-  doc.text('Generada por FerreStock', { align: 'center' });
+  // ===== FORMA DE PAGO =====
+  const formaPago = venta.estado === 'PAGADA' ? 'CONTADO'
+                  : venta.estado === 'CREDITO' ? 'CRÉDITO'
+                  : venta.estado === 'ANULADA' ? 'ANULADA'
+                  : 'PENDIENTE';
+  linea(`Forma de pago: ${formaPago}`, 7);
+  if (venta.estado === 'CREDITO') {
+    linea('(saldo pendiente de pago)', 7);
+  }
+  doc.y += GAP;
+  linea(SEP2, 7);
+  doc.y += GAP;
+
+  // ===== PIE / DATOS DIAN =====
+  centro('CUFE:', 6);
+  centro('[pendiente de transmisión DIAN]', 6);
+  doc.y += GAP;
+  centro(FERRETERIA.resolucion, 6);
+  centro(`Rango: ${FERRETERIA.rango}`, 6);
+  doc.y += GAP;
+  linea(SEP2, 7);
+  doc.y += GAP;
+
+  negritaCentro('¡Gracias por su compra!', 7);
+  centro('Este documento equivale a factura electrónica', 6);
+  centro('según Art. 617 del Estatuto Tributario', 6);
+  centro('Conserve este tiquete', 6);
 
   doc.end();
 }

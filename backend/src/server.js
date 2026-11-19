@@ -366,9 +366,11 @@ app.get('/api/ventas/:id/factura', async (req, res) => {
     const [[venta]] = await pool.query(`
       SELECT v.id_venta, v.fecha_hora, v.subtotal, v.iva, v.total, v.estado,
              COALESCE(c.nombre, 'Consumidor Final') AS cliente,
-             c.tipo_documento, c.numero_documento
+             c.tipo_documento, c.numero_documento,
+             u.usuario AS cajero
       FROM ventas v
       LEFT JOIN clientes c ON c.id_cliente = v.id_cliente
+      LEFT JOIN usuarios u ON u.id_usuario = v.id_usuario
       WHERE v.id_venta = ?
     `, [id]);
     if (!venta) return res.status(404).json({ error: 'Venta no encontrada' });
