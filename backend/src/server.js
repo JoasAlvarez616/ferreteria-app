@@ -383,7 +383,7 @@ app.get('/api/ventas/:id/factura', async (req, res) => {
       WHERE dv.id_venta = ?
     `, [id]);
 
-    generarFacturaPDF(venta, lineas, res);
+    await generarFacturaPDF(venta, lineas, res);
   } catch (err) {
     console.error('Error generando factura:', err);
     res.status(500).json({ error: 'No se pudo generar la factura' });

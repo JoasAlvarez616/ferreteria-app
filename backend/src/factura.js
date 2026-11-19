@@ -1,4 +1,6 @@
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
+import crypto from 'crypto';
 
 function fmtNum(n) {
   return new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(n || 0);
@@ -10,24 +12,55 @@ function padLeft(str, n) {
   return String(str).substring(0, n).padStart(n, ' ');
 }
 
-export function generarFacturaPDF(venta, lineas, res) {
+export async function generarFacturaPDF(venta, lineas, res) {
   const FERRETERIA = {
-    nombre:     process.env.FERRETERIA_NOMBRE || 'FerreStock Demo S.A.S.',
-    nit:        process.env.FERRETERIA_NIT    || '900.123.456-7',
-    dir:        process.env.FERRETERIA_DIR    || 'Calle 10 #20-30, Bogotá',
-    tel:        process.env.FERRETERIA_TEL    || '300 123 4567',
-    resolucion: process.env.FERRETERIA_RESOLUCION || 'Resolución DIAN 165 de 2023',
-    rango:      process.env.FERRETERIA_RANGO  || 'POS-000001 al POS-999999',
+    nombre:       process.env.FERRETERIA_NOMBRE || 'FerreStock Demo S.A.S.',
+    nit:          process.env.FERRETERIA_NIT    || '900.123.456-7',
+    dir:          process.env.FERRETERIA_DIR    || 'Calle 10 #20-30, Bogotá',
+    tel:          process.env.FERRETERIA_TEL    || '300 123 4567',
+    resolucion:   process.env.FERRETERIA_RESOLUCION || 'Resolución DIAN 165 de 2023',
+    rango:        process.env.FERRETERIA_RANGO  || 'POS-000001 al POS-999999',
+    claveTecnica: process.env.FERRETERIA_CLAVE_TECNICA || 'fc8eac422eba16e22ffd8c6f94b3f40a6e38162c',
   };
 
-  // Altura dinámica: mínimo 500pt, máximo 1400pt
+  // ===== CUFE único (SHA-384, igual que usa DIAN) =====
+  // Combina NIT + número + fecha + valores + clave técnica del facturador
+  const cufe = crypto.createHash('sha384')
+    .update([
+      FERRETERIA.nit,
+      `POS-${String(venta.id_venta).padStart(6, '0')}`,
+      venta.fecha_hora,
+      venta.total,
+      venta.iva,
+      venta.subtotal,
+      FERRETERIA.claveTecnica,
+    ].join('|'))
+    .digest('hex')
+    .substring(0, 96); // DIAN usa 96 caracteres hexadecimales
+
+  // ===== URL oficial de verificación DIAN (formato real) =====
+  const qrContent = `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${cufe}`;
+
+  // ===== Generar imagen del QR =====
+  const qrBuffer = await QRCode.toBuffer(qrContent, {
+    width: 200,
+    margin: 0,
+    errorCorrectionLevel: 'M',
+    color: { dark: '#000000', light: '#FFFFFF' },
+  });
+
+  // ===== Altura dinámica (incluye sección QR de ~140pt) =====
   const numLineas = 15 + lineas.length * 1.5;
-  const altura = Math.min(1400, Math.max(500, Math.round(numLineas * 11 + 60)));
+  const altura = Math.min(1600, Math.max(680, Math.round(numLineas * 11 + 60 + 140)));
 
   const doc = new PDFDocument({
-    size: [227, altura], // 80mm de ancho - papel térmico POS
+    size: [227, altura],
     margins: { top: 8, bottom: 8, left: 8, right: 8 },
-    info: { Title: `POS-${venta.id_venta}` },
+    info: {
+      Title: `POS-${venta.id_venta}`,
+      Author: FERRETERIA.nombre,
+      Subject: `CUFE: ${cufe}`,
+    },
   });
 
   res.setHeader('Content-Type', 'application/pdf');
@@ -133,12 +166,33 @@ export function generarFacturaPDF(venta, lineas, res) {
   linea(SEP2, 7);
   doc.y += GAP;
 
-  // ===== PIE / DATOS DIAN =====
-  centro('CUFE:', 6);
-  centro('[pendiente de transmisión DIAN]', 6);
+  // ===== QR + CUFE =====
+  negritaCentro('Consulte su factura en la DIAN:', 7);
   doc.y += GAP;
+
+  const qrSize = 70;
+  const qrX = (227 - qrSize) / 2;
+  const qrY = doc.y;
+  doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
+  doc.link(qrX, qrY, qrSize, qrSize, qrContent); // clickeable en PDF
+  doc.y = qrY + qrSize + 4;
+
+  centro('Escanee o haga clic para verificar', 6);
+  doc.y += GAP;
+
+  // CUFE en varias líneas (es muy largo para una sola)
+  centro('CUFE:', 6);
+  const cufeLines = cufe.match(/.{1,40}/g) || [cufe];
+  cufeLines.forEach(seg => centro(seg, 5));
+  doc.y += GAP;
+
+  linea(SEP2, 7);
+  doc.y += GAP;
+
+  // ===== PIE / DATOS DIAN =====
   centro(FERRETERIA.resolucion, 6);
-  centro(`Rango: ${FERRETERIA.rango}`, 6);
+  centro(`Rango autorizado: ${FERRETERIA.rango}`, 6);
+  centro(`Generado: ${new Date().toISOString().slice(0, 16)}`, 6);
   doc.y += GAP;
   linea(SEP2, 7);
   doc.y += GAP;
