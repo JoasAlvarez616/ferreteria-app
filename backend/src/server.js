@@ -12,6 +12,7 @@ import {
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
+import QRCode from 'qrcode';
 import 'dotenv/config';
 import { pool } from './db.js';
 import bcrypt from 'bcrypt';
