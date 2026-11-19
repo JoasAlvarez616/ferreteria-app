@@ -939,6 +939,105 @@ app.post('/api/chat', validate(chatSchema), async (req, res) => {
           description: 'Devuelve KPIs generales: total de productos, stock total, número de ventas e ingresos netos.',
           parameters: { type: 'object', properties: {} }
         }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'ventas_por_rango',
+          description: 'Total vendido entre dos fechas. Formato YYYY-MM-DD. Útil para "cuánto vendí del 1 al 15 de octubre".',
+          parameters: {
+            type: 'object',
+            properties: {
+              fecha_inicio: { type: 'string', description: 'Fecha inicial YYYY-MM-DD' },
+              fecha_fin: { type: 'string', description: 'Fecha final YYYY-MM-DD' }
+            },
+            required: ['fecha_inicio', 'fecha_fin']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'ventas_por_mes',
+          description: 'Resumen de ventas de un mes específico. Recibe año (ej 2024) y mes (1-12).',
+          parameters: {
+            type: 'object',
+            properties: {
+              anio: { type: 'number', description: 'Año de 4 dígitos' },
+              mes: { type: 'number', description: 'Mes del 1 al 12' }
+            },
+            required: ['anio', 'mes']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'comparar_meses',
+          description: 'Compara las ventas totales de dos meses del mismo año. Devuelve total, diferencia y porcentaje.',
+          parameters: {
+            type: 'object',
+            properties: {
+              anio: { type: 'number' },
+              mes1: { type: 'number', description: 'Mes base (1-12)' },
+              mes2: { type: 'number', description: 'Mes a comparar (1-12)' }
+            },
+            required: ['anio', 'mes1', 'mes2']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'top_productos_rango',
+          description: 'Top N productos más vendidos en un rango de fechas.',
+          parameters: {
+            type: 'object',
+            properties: {
+              fecha_inicio: { type: 'string', description: 'YYYY-MM-DD' },
+              fecha_fin: { type: 'string', description: 'YYYY-MM-DD' },
+              limite: { type: 'number', description: 'Cantidad de productos (default 5)' }
+            },
+            required: ['fecha_inicio', 'fecha_fin']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'historial_cliente',
+          description: 'Historial completo de un cliente: total de compras, deuda pendiente, última compra, número de ventas.',
+          parameters: {
+            type: 'object',
+            properties: {
+              nombre: { type: 'string', description: 'Nombre del cliente' }
+            },
+            required: ['nombre']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'clientes_morosos',
+          description: 'Lista de clientes con cuentas por cobrar VENCIDAS (fecha_vencimiento anterior a hoy).',
+          parameters: { type: 'object', properties: {} }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'dias_mas_ventas',
+          description: 'Devuelve los 5 días con más ventas en un rango. Útil para ver patrones.',
+          parameters: {
+            type: 'object',
+            properties: {
+              fecha_inicio: { type: 'string', description: 'YYYY-MM-DD' },
+              fecha_fin: { type: 'string', description: 'YYYY-MM-DD' }
+            },
+            required: ['fecha_inicio', 'fecha_fin']
+          }
+        }
       }
     ];
 
@@ -1076,6 +1175,116 @@ app.post('/api/chat', validate(chatSchema), async (req, res) => {
           };
         }
 
+                case 'ventas_por_rango': {
+          const [[data]] = await pool.query(`
+            SELECT COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS total
+            FROM ventas
+            WHERE DATE(fecha_hora) BETWEEN ? AND ? AND estado <> 'ANULADA'
+          `, [args.fecha_inicio, args.fecha_fin]);
+          return {
+            fecha_inicio: args.fecha_inicio,
+            fecha_fin: args.fecha_fin,
+            ventas: Number(data.cantidad),
+            total: Number(data.total),
+            ticket_promedio: data.cantidad > 0 ? Math.round(Number(data.total) / Number(data.cantidad)) : 0
+          };
+        }
+        case 'ventas_por_mes': {
+          const [[data]] = await pool.query(`
+            SELECT COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS total
+            FROM ventas
+            WHERE YEAR(fecha_hora) = ? AND MONTH(fecha_hora) = ? AND estado <> 'ANULADA'
+          `, [args.anio, args.mes]);
+          return {
+            anio: args.anio,
+            mes: args.mes,
+            ventas: Number(data.cantidad),
+            total: Number(data.total),
+            ticket_promedio: data.cantidad > 0 ? Math.round(Number(data.total) / Number(data.cantidad)) : 0
+          };
+        }
+        case 'comparar_meses': {
+          const [[m1]] = await pool.query(`
+            SELECT COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS total
+            FROM ventas WHERE YEAR(fecha_hora) = ? AND MONTH(fecha_hora) = ? AND estado <> 'ANULADA'
+          `, [args.anio, args.mes1]);
+          const [[m2]] = await pool.query(`
+            SELECT COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS total
+            FROM ventas WHERE YEAR(fecha_hora) = ? AND MONTH(fecha_hora) = ? AND estado <> 'ANULADA'
+          `, [args.anio, args.mes2]);
+          const t1 = Number(m1.total), t2 = Number(m2.total);
+          const cambio = t1 > 0 ? Math.round(((t2 - t1) / t1) * 100) : 0;
+          return {
+            mes1: { mes: args.mes1, ventas: Number(m1.cantidad), total: t1 },
+            mes2: { mes: args.mes2, ventas: Number(m2.cantidad), total: t2 },
+            diferencia_porcentaje: cambio,
+            tendencia: cambio > 0 ? 'subió' : cambio < 0 ? 'bajó' : 'igual'
+          };
+        }
+        case 'top_productos_rango': {
+          const limite = Number(args.limite) || 5;
+          const [rows] = await pool.query(`
+            SELECT p.referencia, p.nombre, SUM(dv.cantidad_base) AS unidades,
+                   SUM(dv.subtotal) AS total
+            FROM detalle_venta dv
+            JOIN productos p ON p.id_producto = dv.id_producto
+            JOIN ventas v ON v.id_venta = dv.id_venta
+            WHERE DATE(v.fecha_hora) BETWEEN ? AND ? AND v.estado <> 'ANULADA'
+            GROUP BY p.id_producto
+            ORDER BY unidades DESC
+            LIMIT ?
+          `, [args.fecha_inicio, args.fecha_fin, limite]);
+          return rows.length ? rows : { mensaje: 'No hubo ventas en ese rango' };
+        }
+        case 'historial_cliente': {
+          const q = `%${args.nombre}%`;
+          const [rows] = await pool.query(`
+            SELECT c.nombre,
+                   COUNT(DISTINCT v.id_venta) AS total_ventas,
+                   COALESCE(SUM(v.total), 0) AS total_comprado,
+                   MAX(v.fecha_hora) AS ultima_compra,
+                   COALESCE((SELECT SUM(cxc.saldo) FROM cuentas_por_cobrar cxc
+                     WHERE cxc.id_venta IN (SELECT id_venta FROM ventas WHERE id_cliente = c.id_cliente)
+                       AND cxc.estado NOT IN ('PAGADA','ANULADA')), 0) AS deuda_pendiente
+            FROM clientes c
+            LEFT JOIN ventas v ON v.id_cliente = c.id_cliente AND v.estado <> 'ANULADA'
+            WHERE c.nombre LIKE ?
+            GROUP BY c.id_cliente
+            LIMIT 3
+          `, [q]);
+          return rows.length ? rows : { mensaje: `No encontré cliente con "${args.nombre}"` };
+        }
+        case 'clientes_morosos': {
+          const [rows] = await pool.query(`
+            SELECT c.nombre, c.telefono,
+                   SUM(cxc.saldo) AS deuda_total,
+                   COUNT(*) AS cuentas_vencidas,
+                   MIN(cxc.fecha_vencimiento) AS vencida_desde
+            FROM cuentas_por_cobrar cxc
+            JOIN ventas v ON v.id_venta = cxc.id_venta
+            JOIN clientes c ON c.id_cliente = v.id_cliente
+            WHERE cxc.fecha_vencimiento < CURRENT_DATE
+              AND cxc.estado NOT IN ('PAGADA', 'ANULADA')
+            GROUP BY c.id_cliente
+            ORDER BY deuda_total DESC
+            LIMIT 10
+          `);
+          return rows.length ? rows : { mensaje: 'No hay clientes morosos. Todos al día.' };
+        }
+        case 'dias_mas_ventas': {
+          const [rows] = await pool.query(`
+            SELECT DATE(fecha_hora) AS fecha,
+                   COUNT(*) AS ventas,
+                   COALESCE(SUM(total), 0) AS total
+            FROM ventas
+            WHERE DATE(fecha_hora) BETWEEN ? AND ? AND estado <> 'ANULADA'
+            GROUP BY DATE(fecha_hora)
+            ORDER BY total DESC
+            LIMIT 5
+          `, [args.fecha_inicio, args.fecha_fin]);
+          return rows.length ? rows : { mensaje: 'No hubo ventas en ese rango' };
+        }
+
         default:
           return { error: `Herramienta desconocida: ${nombre}` };
       }
@@ -1100,8 +1309,15 @@ CAPACIDADES REALES:
 - Consultar stock de productos
 - Listar productos por categoría o con stock bajo
 - Ver ventas del día, últimas ventas y top productos
-- Consultar deuda de clientes
+- Consultas por fecha/rango: "¿cuánto vendí en octubre?", "ventas del 15 al 20"
+- Comparar meses: "¿vendí más en enero o febrero?"
+- Top productos por rango: "top 5 productos de la última semana"
+- Historial de clientes: "¿cuánto ha comprado María Gómez?"
+- Clientes morosos: "¿quién me debe?"
+- Días con más ventas: "¿qué días vendo más?"
 - Mostrar resumen general del negocio
+
+Cuando el usuario mencione fechas relativas ("el mes pasado", "la semana pasada", "octubre"), calcula las fechas concretas antes de llamar la herramienta.
 
 EJEMPLOS DE RESPUESTAS CORRECTAS:
 - Pregunta: "¿Cuántos martillos tengo?" → Llamas consultar_stock_producto("martillo") → Respondes con la cantidad exacta.
