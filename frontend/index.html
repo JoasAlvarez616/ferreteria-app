@@ -17,6 +17,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js"></script>
 <style>
 /* ============================================================
    IDENTIDAD "TALLER INDUSTRIAL"
@@ -2193,6 +2194,57 @@ async function descargarFactura(idVenta) {
   }
 }
 
+async function imprimirTicketPOS(idVenta) {
+  try {
+    // 1. Pedir el ticket ESC/POS al backend
+    const r = await apiFetch(`/ventas/${idVenta}/ticket-escpos`);
+    const data = await r.json();
+    if (!r.ok) return toast(data.error || 'Error al generar ticket', 'error');
+
+    // 2. Conectar con QZ Tray
+    if (!qz.websocket.isActive()) {
+      toast('Conectando con QZ Tray...');
+      await qz.websocket.connect();
+    }
+
+    // 3. Buscar impresoras
+    const printers = await qz.printers.find();
+    console.log('Impresoras detectadas:', printers);
+    if (!printers.length) return toast('No hay impresoras instaladas', 'error');
+
+    // Auto-detectar la POS (busca "pos", "58" o "zjiang" en el nombre)
+    let printerName = printers.find(p => /pos|58|zjiang/i.test(p));
+    if (!printerName) {
+      printerName = printers[0];
+      toast(`Usando impresora: ${printerName}`, 'warning');
+    }
+    console.log('Impresora seleccionada:', printerName);
+
+    // 4. Configurar e imprimir
+    const config = qz.configs.create(printerName);
+    const binaryString = atob(data.ticket);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    await qz.print(config, [{
+      type: 'raw',
+      format: 'command',
+      data: bytes,
+    }]);
+
+    toast('Ticket enviado a la impresora ✓');
+  } catch (e) {
+    console.error('Error QZ Tray:', e);
+    if (e.message && e.message.includes('Unable to establish connection')) {
+      toast('QZ Tray no está abierto. Ábrelo desde la bandeja.', 'error');
+    } else {
+      toast('Error al imprimir: ' + (e.message || 'desconocido'), 'error');
+    }
+  }
+}
+
 async function cargarVentas() {
   try {
     document.getElementById('tabla-ventas').innerHTML = skeletonTable(5, 7);
@@ -2212,7 +2264,9 @@ async function cargarVentas() {
       <td>${v.estado}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;">
   ${v.estado !== 'ANULADA' ?
-    `<button class="btn ghost sm" onclick="descargarFactura(${v.id_venta})" title="Descargar ticket POS">🧾 POS</button>` : ''}
+    `<button class="btn ghost sm" onclick="descargarFactura(${v.id_venta})" title="Descargar PDF">📄 Factura</button>` : ''}
+  ${v.estado !== 'ANULADA' ?
+    `<button class="btn ghost sm" onclick="imprimirTicketPOS(${v.id_venta})" title="Imprimir en POS">🖨️ POS</button>` : ''}
   ${v.estado !== 'ANULADA' && v.estado !== 'PAGADA' && v.estado !== 'CREDITO' ?
     `<button class="btn ghost sm" onclick="abrirModalCredito(${v.id_venta})">Crédito</button>` : ''}
   ${v.estado !== 'ANULADA' ?
