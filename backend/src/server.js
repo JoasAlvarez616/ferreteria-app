@@ -482,7 +482,15 @@ app.get('/api/ventas/:id/ticket-escpos', async (req, res) => {
     printer.drawLine();
 
     printer.alignCenter();
-    await printer.printQR(qrUrl, { cellSize: 6, correctionLevel: 'M' });
+    
+    // Generar QR como imagen (más confiable que printQR para POS 5890K)
+    const qrBuffer = await QRCode.toBuffer(qrUrl, {
+      width: 200,
+      margin: 1,
+      errorCorrectionLevel: 'M',
+    });
+    printer.printImage(qrBuffer);
+    
     printer.println('Escanee para verificar');
     printer.println('en la DIAN');
     printer.drawLine();
