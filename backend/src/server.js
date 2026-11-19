@@ -483,17 +483,11 @@ app.get('/api/ventas/:id/ticket-escpos', async (req, res) => {
     printer.drawLine();
 
     printer.alignCenter();
-    
-    // Generar QR como imagen (más confiable que printQR para POS 5890K)
-    const qrBuffer = await QRCode.toBuffer(qrUrl, {
-      width: 200,
-      margin: 1,
-      errorCorrectionLevel: 'M',
-    });
-    printer.printImage(qrBuffer);
-    
-    printer.println('Escanee para verificar');
-    printer.println('en la DIAN');
+    printer.println('Verifique su factura en:');
+    printer.println('catalogo-vpfe.dian.gov.co');
+    printer.println('');
+    printer.println('Escanee el QR del PDF');
+    printer.println('o consulte con el CUFE:');
     printer.drawLine();
     printer.println('CUFE:');
     const cufeChunks = cufe.match(/.{1,42}/g) || [cufe];
