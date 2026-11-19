@@ -393,12 +393,11 @@ app.get('/api/ventas/:id/factura', async (req, res) => {
 });
 
 // ============================================================
-// TICKET ESC/POS (para impresora térmica POS)
+// TICKET POS — ESC/POS con formato DIAN (58mm, 32 chars)
 // ============================================================
 app.get('/api/ventas/:id/ticket-escpos', async (req, res) => {
   try {
     const { id } = req.params;
-
     const [[venta]] = await pool.query(`
       SELECT v.id_venta, v.fecha_hora, v.subtotal, v.iva, v.total, v.estado,
              COALESCE(c.nombre, 'Consumidor Final') AS cliente,
@@ -419,81 +418,208 @@ app.get('/api/ventas/:id/ticket-escpos', async (req, res) => {
       WHERE dv.id_venta = ?
     `, [id]);
 
-    // CUFE (mismo cálculo que la factura PDF)
-    const FERRETERIA = {
-      nit: process.env.FERRETERIA_NIT || '900.123.456-7',
+    // --- Helpers de formato ---
+    const fmtNum = (n) => new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(n || 0);
+    const fmtCant = (n) => {
+      const num = Number(n);
+      if (Number.isInteger(num)) return String(num);
+      return num.toFixed(2).replace(/\.?0+$/, '');
+    };
+    const wrapText = (text, width) => {
+      const words = String(text).split(/\s+/);
+      const lines = [];
+      let line = '';
+      for (const w of words) {
+        if ((line + ' ' + w).trim().length > width) {
+          if (line) lines.push(line.trim());
+          line = w;
+        } else {
+          line = (line + ' ' + w).trim();
+        }
+      }
+      if (line) lines.push(line.trim());
+      return lines.length ? lines : [''];
+    };
+
+    // --- Datos de la ferretería (env) ---
+    const F = {
+      nombre:      process.env.FERRETERIA_NOMBRE || 'FERRETERIA DEMO S.A.S.',
+      nit:         process.env.FERRETERIA_NIT || '900.123.456-7',
+      dir:         process.env.FERRETERIA_DIR || 'Calle 10 #20-30, Bogota',
+      tel:         process.env.FERRETERIA_TEL || '300 123 4567',
+      ciiu:        process.env.FERRETERIA_CIIU || '4752',
+      resNumero:   process.env.FERRETERIA_RESOLUCION_NUMERO || '18764000123456',
+      resFecha:    process.env.FERRETERIA_RESOLUCION_FECHA || '2024-01-15',
+      resVigencia: process.env.FERRETERIA_RESOLUCION_VIGENCIA || '2025-01-15',
+      rango:       process.env.FERRETERIA_RANGO || 'POS-000001 al POS-999999',
+      software:    process.env.FERRETERIA_SOFTWARE || 'FerreStock S.A.S.',
+      softwareNit: process.env.FERRETERIA_SOFTWARE_NIT || '901.234.567-8',
+      clienteDefaultNit: process.env.FERRETERIA_CLIENTE_DEFAULT_NIT || '222222222222',
       claveTecnica: process.env.FERRETERIA_CLAVE_TECNICA || 'fc8eac422eba16e22ffd8c6f94b3f40a6e38162c',
     };
-    const cufe = crypto.createHash('sha384')
-      .update([
-        FERRETERIA.nit,
-        `POS-${String(venta.id_venta).padStart(6, '0')}`,
-        venta.fecha_hora,
-        venta.total, venta.iva, venta.subtotal,
-        FERRETERIA.claveTecnica,
-      ].join('|'))
-      .digest('hex').substring(0, 96);
+
+    // --- CUFE ---
+    const cufe = crypto.createHash('sha384').update([
+      F.nit,
+      `POS-${String(venta.id_venta).padStart(6, '0')}`,
+      venta.fecha_hora,
+      venta.total, venta.iva, venta.subtotal,
+      F.claveTecnica,
+    ].join('|')).digest('hex').substring(0, 96);
     const qrUrl = `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${cufe}`;
 
-    // Construir ticket ESC/POS
+    // --- Impresora virtual ESC/POS ---
+    const { ThermalPrinter, PrinterTypes } = await import('node-thermal-printer');
     const printer = new ThermalPrinter({
       type: PrinterTypes.EPSON,
-      width: 42,
-      characterSet: CharacterSet.PC850_MULTILINGUAL,
+      width: 32,                  // 58mm = 32 chars imprimibles
+      characterSet: 'WPC1252',    // Windows-1252 → tildes y ñ correctas
       removeSpecialCharacters: false,
-      lineCharacter: '-',
+      lineCharacter: '=',
     });
 
+    // ===== ENCABEZADO =====
     printer.alignCenter();
     printer.bold(true);
-    printer.println((process.env.FERRETERIA_NOMBRE || 'FERRETERIA DEMO').toUpperCase());
+    printer.setTextSize(1, 1);
+    printer.println(F.nombre.toUpperCase());
+    printer.setTextNormal();
     printer.bold(false);
-    printer.println(`NIT: ${FERRETERIA.nit}`);
-    printer.println(process.env.FERRETERIA_DIR || 'Calle 10 #20-30');
-    printer.println(`Tel: ${process.env.FERRETERIA_TEL || '300 123 4567'}`);
-    printer.drawLine();
+    printer.println(`NIT: ${F.nit}`);
+    printer.println(F.dir);
+    printer.println(`Tel: ${F.tel}`);
+    printer.println(`Act. economica: ${F.ciiu}`);
+    printer.drawLine('=');
+
     printer.bold(true);
-    printer.println('DOCUMENTO EQUIVALENTE ELECTRONICO');
-    printer.println('TIQUETE POS');
+    printer.println('DOCUMENTO EQUIVALENTE');
+    printer.println('ELECTRONICO - POS');
     printer.bold(false);
-    printer.drawLine();
+    printer.println(`No. POS-${String(venta.id_venta).padStart(6, '0')}`);
+    printer.drawLine('=');
+
+    // ===== FECHAS =====
+    printer.alignLeft();
+    printer.println(`Fecha gen.: ${String(venta.fecha_hora).slice(0, 16)}`);
+    printer.println(`Fecha exp.: ${String(venta.fecha_hora).slice(0, 16)}`);
+    printer.drawLine('-');
+
+    // ===== CLIENTE =====
+    const clienteNit = venta.numero_documento
+      ? `${venta.tipo_documento || 'CC'} ${venta.numero_documento}`
+      : `CC ${F.clienteDefaultNit}`;
+    printer.println(`Cliente: ${venta.cliente}`);
+    printer.println(`C.C./NIT: ${clienteNit}`);
+    printer.println(`Direccion: ${F.dir}`);
+    printer.println(`Telefono: ${F.tel}`);
+    printer.println(`Vendedor: ${venta.cajero || 'admin'}`);
+    printer.drawLine('-');
+
+    // ===== ITEMS =====
+    printer.alignCenter();
+    printer.bold(true);
+    printer.println('DETALLE PRODUCTOS');
+    printer.bold(false);
+    printer.drawLine('-');
 
     printer.alignLeft();
-    printer.println(`Tiquete: POS-${String(venta.id_venta).padStart(6, '0')}`);
-    printer.println(`Fecha: ${String(venta.fecha_hora).slice(0, 16)}`);
-    printer.println(`Cajero: ${venta.cajero || 'admin'}`);
-    printer.println(`Cliente: ${venta.cliente}`);
-    if (venta.numero_documento) {
-      printer.println(`${venta.tipo_documento || 'CC'}: ${venta.numero_documento}`);
-    }
-    printer.drawLine();
-
+    let totalItems = 0;
     lineas.forEach(l => {
-      const desc = String(l.nombre).substring(0, 24);
-      printer.println(`${l.cantidad} x ${desc}`);
-      printer.leftRight('', `$${Number(l.subtotal_linea).toLocaleString('es-CO')}`);
+      const cant = fmtCant(l.cantidad);
+      totalItems += Number(l.cantidad);
+      const nombreLines = wrapText(String(l.nombre), 32);
+      nombreLines.forEach(line => printer.println(line));
+      const qtyUnit = `  ${cant} x $${fmtNum(l.precio_unitario)}`;
+      printer.leftRight(qtyUnit, `$${fmtNum(l.subtotal_linea)}`);
     });
-    printer.drawLine();
+    printer.drawLine('-');
 
-    printer.leftRight('Subtotal:', `$${Number(venta.subtotal).toLocaleString('es-CO')}`);
-    printer.leftRight('IVA 19%:', `$${Number(venta.iva).toLocaleString('es-CO')}`);
-    printer.bold(true);
-    printer.leftRight('TOTAL:', `$${Number(venta.total).toLocaleString('es-CO')}`);
-    printer.bold(false);
-    printer.drawLine();
+    // ===== TOTALES =====
+    printer.println(`Total items: ${totalItems}`);
+    printer.leftRight('Total bruto:', `$${fmtNum(venta.subtotal)}`);
+    printer.leftRight('Descuentos:', '$0');
+    printer.drawLine('-');
 
+    // ===== IMPUESTOS =====
     printer.alignCenter();
-    printer.println('Verifique su factura en:');
-    printer.println('catalogo-vpfe.dian.gov.co');
-    printer.println('');
-    printer.println('Escanee el QR del PDF');
-    printer.println('o consulte con el CUFE:');
-    printer.drawLine();
+    printer.bold(true);
+    printer.println('DISCRIMINACION IMPUESTOS');
+    printer.bold(false);
+    printer.drawLine('-');
+    printer.alignLeft();
+
+    const tasa = Number(venta.subtotal) > 0
+      ? Math.round((Number(venta.iva) / Number(venta.subtotal)) * 100)
+      : 0;
+    const ivaLabel = tasa > 0 ? `IVA ${tasa}%` : 'IVA 0% (exento)';
+
+    printer.println('ID  Base            Imp.');
+    printer.println(`A   $${fmtNum(venta.subtotal)}        $${fmtNum(venta.iva)}`);
+    printer.println(`A = ${ivaLabel}`);
+    printer.drawLine('-');
+
+    printer.leftRight('SUBTOTAL:', `$${fmtNum(venta.subtotal)}`);
+    printer.leftRight(`${ivaLabel}:`, `$${fmtNum(venta.iva)}`);
+    printer.bold(true);
+    printer.setTextSize(1, 1);
+    printer.leftRight('TOTAL A PAGAR:', `$${fmtNum(venta.total)}`);
+    printer.setTextNormal();
+    printer.bold(false);
+    printer.drawLine('=');
+
+    // ===== FORMA DE PAGO =====
+    const formaPago = venta.estado === 'PAGADA'  ? 'CONTADO'
+                    : venta.estado === 'CREDITO' ? 'CREDITO'
+                    : venta.estado === 'ANULADA' ? 'ANULADA'
+                    : 'PENDIENTE';
+    const medioPago = venta.estado === 'PAGADA'  ? 'Efectivo'
+                    : venta.estado === 'CREDITO' ? 'Credito'
+                    : '-';
+    printer.println(`Forma de pago: ${formaPago}`);
+    printer.println(`Medio de pago: ${medioPago}`);
+    if (venta.estado === 'PAGADA') {
+      printer.leftRight('Recibido:', `$${fmtNum(venta.total)}`);
+      printer.leftRight('Cambio:', '$0');
+    } else if (venta.estado === 'CREDITO') {
+      printer.leftRight('Saldo pendiente:', `$${fmtNum(venta.total)}`);
+    }
+    printer.drawLine('-');
+
+    // ===== QR =====
+    printer.alignCenter();
+    await printer.printQR(qrUrl, { cellSize: 6, correctionLevel: 'M' });
+    printer.println('Escanee para verificar');
+    printer.println('en la DIAN');
+    printer.drawLine('-');
+
+    // ===== CUFE =====
+    printer.bold(true);
     printer.println('CUFE:');
-    const cufeChunks = cufe.match(/.{1,42}/g) || [cufe];
+    printer.bold(false);
+    const cufeChunks = cufe.match(/.{1,32}/g) || [cufe];
     cufeChunks.forEach(c => printer.println(c));
-    printer.drawLine();
-    printer.println('!Gracias por su compra!');
+    printer.drawLine('-');
+
+    // ===== LEYENDA LEGAL =====
+    printer.println('Esta factura electronica');
+    printer.println('equivale a titulo valor');
+    printer.println('Art. 617 Estatuto Tributario');
+    printer.drawLine('-');
+
+    printer.println(`Res. DIAN No. ${F.resNumero}`);
+    printer.println(`Fecha: ${F.resFecha}`);
+    printer.println(`Prefijo: POS`);
+    printer.println(`Rango: ${F.rango}`);
+    printer.println(`Vigencia: ${F.resVigencia}`);
+    printer.drawLine('-');
+
+    printer.println('Fabricante software:');
+    printer.println(F.software);
+    printer.println(`NIT: ${F.softwareNit}`);
+    printer.drawLine('-');
+
+    printer.println('Gracias por su compra');
+    printer.println('Conserve este tiquete');
     printer.newLine();
     printer.newLine();
     printer.cut();
