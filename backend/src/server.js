@@ -19,7 +19,7 @@ import rateLimit from 'express-rate-limit';
 import { AppError } from './utils/errors.js';
 import { errorHandler, notFoundHandler, asyncHandler } from './middleware/errorHandler.js';
 import { generarFacturaPDF } from './factura.js';
-import { ThermalPrinter, PrinterTypes } from 'node-thermal-printer';
+import { ThermalPrinter, PrinterTypes, CharacterSet } from 'node-thermal-printer';
 
 
 const app = express();
@@ -438,7 +438,7 @@ app.get('/api/ventas/:id/ticket-escpos', async (req, res) => {
     const printer = new ThermalPrinter({
       type: PrinterTypes.EPSON,
       width: 42,
-      characterSet: 'CP850',
+      characterSet: CharacterSet.PC850_MULTILINGUAL,
       removeSpecialCharacters: false,
       lineCharacter: '-',
     });
