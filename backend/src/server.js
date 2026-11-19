@@ -18,6 +18,8 @@ import bcrypt from 'bcrypt';
 import rateLimit from 'express-rate-limit';
 import { AppError } from './utils/errors.js';
 import { errorHandler, notFoundHandler, asyncHandler } from './middleware/errorHandler.js';
+import { generarFacturaPDF } from './factura.js';
+
 
 const app = express();
 const TASA_IVA = 0.19; // 19% Colombia - centralizado
@@ -353,6 +355,37 @@ app.post('/api/ventas', validate(ventaSchema), async (req, res) => {
     await conn.rollback();
     res.status(400).json({ error: err.message });
   } finally { conn.release(); }
+});
+
+// ============================================================
+// FACTURA PDF
+// ============================================================
+app.get('/api/ventas/:id/factura', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [[venta]] = await pool.query(`
+      SELECT v.id_venta, v.fecha_hora, v.subtotal, v.iva, v.total, v.estado,
+             COALESCE(c.nombre, 'Consumidor Final') AS cliente,
+             c.tipo_documento, c.numero_documento
+      FROM ventas v
+      LEFT JOIN clientes c ON c.id_cliente = v.id_cliente
+      WHERE v.id_venta = ?
+    `, [id]);
+    if (!venta) return res.status(404).json({ error: 'Venta no encontrada' });
+
+    const [lineas] = await pool.query(`
+      SELECT p.referencia, p.nombre, dv.cantidad, dv.precio_unitario,
+             (dv.cantidad * dv.precio_unitario) AS subtotal_linea
+      FROM detalle_venta dv
+      JOIN productos p ON p.id_producto = dv.id_producto
+      WHERE dv.id_venta = ?
+    `, [id]);
+
+    generarFacturaPDF(venta, lineas, res);
+  } catch (err) {
+    console.error('Error generando factura:', err);
+    res.status(500).json({ error: 'No se pudo generar la factura' });
+  }
 });
 
 // ============================================================
